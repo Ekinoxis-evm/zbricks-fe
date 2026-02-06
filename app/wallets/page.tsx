@@ -3,12 +3,26 @@
 
 import { useEffect, useRef, useState } from "react";
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
+import { formatUnits } from "@/lib/circle/evm";
 
 const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
 
 type LoginResult = {
   userToken: string;
   encryptionKey: string;
+};
+
+type LoginError = {
+  code?: number;
+  message?: string;
+};
+
+type TokenBalanceEntry = {
+  amount?: string;
+  token?: {
+    symbol?: string;
+    name?: string;
+  };
 };
 
 type Wallet = {
@@ -18,6 +32,15 @@ type Wallet = {
   [key: string]: unknown;
 };
 
+type GatewayBalanceEntry = {
+  domain?: number;
+  depositor?: string;
+  balance?: string;
+  source?: { domain?: number; depositor?: string };
+  amount?: string;
+  value?: string;
+};
+
 export default function HomePage() {
   const sdkRef = useRef<W3SSdk | null>(null);
 
@@ -25,20 +48,24 @@ export default function HomePage() {
   const [deviceId, setDeviceId] = useState<string>("");
   const [deviceIdLoading, setDeviceIdLoading] = useState(false);
 
-  const [email, setEmail] = useState<string>("");
-
   const [deviceToken, setDeviceToken] = useState<string>("");
   const [deviceEncryptionKey, setDeviceEncryptionKey] = useState<string>("");
-  const [otpToken, setOtpToken] = useState<string>("");
+  const [socialReady, setSocialReady] = useState<boolean>(false);
 
   const [loginResult, setLoginResult] = useState<LoginResult | null>(null);
 
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [usdcBalance, setUsdcBalance] = useState<string | null>(null);
+  const [gatewayBalances, setGatewayBalances] = useState<GatewayBalanceEntry[]>([]);
+  const [gatewayTotal, setGatewayTotal] = useState<string | null>(null);
+  const [gatewayLoading, setGatewayLoading] = useState(false);
+  const [gatewayError, setGatewayError] = useState("");
 
   const [status, setStatus] = useState<string>("Ready");
   const [isError, setIsError] = useState<boolean>(false);
+
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID as string;
 
   // Initialize SDK on mount
   useEffect(() => {
@@ -46,19 +73,14 @@ export default function HomePage() {
 
     const initSdk = async () => {
       try {
-        const onLoginComplete = (error: unknown, result: any) => {
+        const onLoginComplete = (
+          error?: LoginError | null,
+          result?: LoginResult | null,
+        ) => {
           if (cancelled) return;
 
           if (error || !result) {
-            // Always treat this as a soft failure
-            const err = (error || {}) as any;
-            const message: string =
-              err?.message || "Email authentication failed.";
-
-            console.log("Email auth failed:", {
-              code: err?.code,
-              message,
-            });
+            const message: string = error?.message || "Authentication failed.";
 
             setIsError(true);
             setStatus(message);
@@ -73,7 +95,7 @@ export default function HomePage() {
           });
           setIsError(false);
           // Keep this neutral so later wallet-status messages aren't confusing
-          setStatus("Email verified. Click Initialize user to continue");
+          setStatus("Login verified. Click Initialize user to continue");
         };
 
         const sdk = new W3SSdk(
@@ -88,7 +110,7 @@ export default function HomePage() {
         if (!cancelled) {
           setSdkReady(true);
           setIsError(false);
-          setStatus("SDK initialized. Ready to request OTP.");
+          setStatus("SDK initialized. Ready for Google login.");
         }
       } catch (err) {
         console.log("Failed to initialize Web SDK:", err);
@@ -165,7 +187,7 @@ export default function HomePage() {
         return null;
       }
 
-      const balances = (data.tokenBalances as any[]) || [];
+      const balances = (data.tokenBalances as TokenBalanceEntry[]) || [];
 
       const usdcEntry =
         balances.find((t) => {
@@ -185,6 +207,60 @@ export default function HomePage() {
       setIsError(true);
       setStatus("Failed to load USDC balance");
       return null;
+    }
+  }
+
+  async function loadGatewayBalances(address: string) {
+    setGatewayLoading(true);
+    setGatewayError("");
+    try {
+      const response = await fetch("/api/endpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "gatewayBalances",
+          depositor: address,
+          token: "USDC",
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || "Failed to load gateway balances");
+      }
+
+      const rawBalances =
+        (data?.balances as GatewayBalanceEntry[]) ||
+        (data?.data?.balances as GatewayBalanceEntry[]) ||
+        [];
+
+      const normalized = rawBalances.map((entry) => ({
+        domain: entry.domain ?? entry.source?.domain,
+        depositor: entry.depositor ?? entry.source?.depositor,
+        balance: entry.balance ?? entry.amount ?? entry.value,
+      }));
+
+      setGatewayBalances(normalized);
+
+      let total = 0n;
+      let hasNumeric = false;
+      normalized.forEach((entry) => {
+        if (!entry.balance) return;
+        try {
+          total += BigInt(entry.balance);
+          hasNumeric = true;
+        } catch {
+          // ignore
+        }
+      });
+
+      setGatewayTotal(hasNumeric ? formatUnits(total, 6) : "0");
+    } catch (err: any) {
+      setGatewayError(err?.message || "Failed to load gateway balances");
+      setGatewayBalances([]);
+      setGatewayTotal(null);
+    } finally {
+      setGatewayLoading(false);
     }
   }
 
@@ -220,7 +296,14 @@ export default function HomePage() {
       setWallets(wallets);
 
       if (wallets.length > 0) {
-        await loadUsdcBalance(userToken, wallets[0].id);
+        const preferred =
+          wallets.find(
+            (w) =>
+              w.blockchain?.toUpperCase().includes("BASE") &&
+              w.blockchain?.toUpperCase().includes("SEPOLIA"),
+          ) ?? wallets[0];
+        await loadUsdcBalance(userToken, preferred.id);
+        await loadGatewayBalances(preferred.address);
 
         if (options?.source === "afterCreate") {
           setIsError(false);
@@ -244,10 +327,10 @@ export default function HomePage() {
     }
   };
 
-  const handleRequestOtp = async () => {
-    if (!email) {
+  const handleGoogleLogin = async () => {
+    if (!googleClientId) {
       setIsError(true);
-      setStatus("Please enter an email address.");
+      setStatus("Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID");
       return;
     }
 
@@ -265,81 +348,64 @@ export default function HomePage() {
 
     try {
       setIsError(false);
-      setStatus("Requesting OTP...");
+      setStatus("Requesting social login token...");
 
       const response = await fetch("/api/endpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "requestEmailOtp",
+          action: "requestSocialToken",
           deviceId,
-          email,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        console.log("Failed to request OTP:", data);
+        console.log("Failed to request social token:", data);
         setIsError(true);
-        setStatus(data.error || data.message || "Failed to request OTP");
+        setStatus(data.error || data.message || "Failed to request social token");
         return;
       }
 
       setDeviceToken(data.deviceToken);
       setDeviceEncryptionKey(data.deviceEncryptionKey);
-      setOtpToken(data.otpToken);
 
-      // Give the SDK the session info so verifyOtp() works
       const sdk = sdkRef.current;
-      if (sdk) {
-        sdk.updateConfigs({
-          appSettings: { appId },
-          loginConfigs: {
-            deviceToken: data.deviceToken,
-            deviceEncryptionKey: data.deviceEncryptionKey,
-            otpToken: data.otpToken,
-            email: { email },
-          },
-        });
+      if (!sdk) {
+        setIsError(true);
+        setStatus("SDK not ready");
+        return;
       }
 
+      sdk.updateConfigs({
+        appSettings: { appId },
+        loginConfigs: {
+          deviceToken: data.deviceToken,
+          deviceEncryptionKey: data.deviceEncryptionKey,
+          google: {
+            clientId: googleClientId,
+            redirectUri: window.location.origin,
+            selectAccountPrompt: true,
+          },
+        },
+      });
+
       setIsError(false);
-      setStatus(
-        "OTP sent! Check your Mailtrap sandbox inbox, then click Verify email OTP.",
-      );
+      setStatus("Opening Google login...");
+      setSocialReady(true);
+      sdk.performLogin("google");
     } catch (err) {
-      console.log("Error requesting OTP:", err);
+      console.log("Error requesting social token:", err);
       setIsError(true);
-      setStatus("Failed to request OTP");
+      setStatus("Failed to request social token");
     }
-  };
-
-  const handleVerifyOtp = () => {
-    const sdk = sdkRef.current;
-    if (!sdk) {
-      setIsError(true);
-      setStatus("SDK not ready");
-      return;
-    }
-
-    if (!deviceToken || !deviceEncryptionKey || !otpToken) {
-      setIsError(true);
-      setStatus("Missing OTP session data. Request a new code.");
-      return;
-    }
-
-    setIsError(false);
-    setStatus("Opening OTP verification window...");
-
-    // Opens Circle's hosted OTP UI; on completion, onLoginComplete fires
-    sdk.verifyOtp();
   };
 
   const handleInitializeUser = async () => {
     if (!loginResult?.userToken) {
       setIsError(true);
-      setStatus("Missing userToken. Please verify your email first.");
+      setStatus("Missing userToken. Please login first.");
       return;
     }
 
@@ -378,8 +444,9 @@ export default function HomePage() {
       setChallengeId(data.challengeId);
       setIsError(false);
       setStatus(`User initialized. Click Create wallet to continue.`);
-    } catch (err: any) {
-      if (err?.code === 155106 && loginResult?.userToken) {
+    } catch (err: unknown) {
+      const error = err as LoginError | undefined;
+      if (error?.code === 155106 && loginResult?.userToken) {
         await loadWallets(loginResult.userToken, {
           source: "alreadyInitialized",
         });
@@ -387,9 +454,9 @@ export default function HomePage() {
         return;
       }
 
-      const errorMsg = err?.code
-        ? `[${err.code}] ${err.message}`
-        : err?.message || "Unknown error";
+      const errorMsg = error?.code
+        ? `[${error.code}] ${error.message}`
+        : error?.message || "Unknown error";
       setIsError(true);
       setStatus("Failed to initialize user: " + errorMsg);
     }
@@ -411,7 +478,7 @@ export default function HomePage() {
 
     if (!loginResult?.userToken || !loginResult?.encryptionKey) {
       setIsError(true);
-      setStatus("Missing login credentials. Please verify your email again.");
+      setStatus("Missing login credentials. Please login again.");
       return;
     }
 
@@ -424,12 +491,13 @@ export default function HomePage() {
     setStatus("Executing challenge...");
 
     sdk.execute(challengeId, (error) => {
-      const err = (error || {}) as any;
-
       if (error) {
-        console.log("Execute challenge failed:", err);
+        const message =
+          typeof error === "object" && error && "message" in error
+            ? String((error as LoginError).message)
+            : "Unknown error";
         setIsError(true);
-        setStatus("Failed to execute challenge: " + (err?.message ?? "Unknown error"));
+        setStatus("Failed to execute challenge: " + message);
         return;
       }
 
@@ -450,52 +518,37 @@ export default function HomePage() {
     });
   };
 
-  const primaryWallet = wallets[0];
+  const primaryWallet =
+    wallets.find(
+      (w) =>
+        w.blockchain?.toUpperCase().includes("BASE") &&
+        w.blockchain?.toUpperCase().includes("SEPOLIA"),
+    ) ?? wallets[0];
 
   return (
     <main>
       <div style={{ width: "50%", margin: "0 auto" }}>
-        <h1>Create a user wallet with email OTP</h1>
-        <p>Enter the email of the user you want to create a wallet for:</p>
-
-        <div style={{ marginBottom: "12px" }}>
-          <label>
-            Email address:
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{ marginLeft: "8px", width: "70%" }}
-              placeholder="you@example.com"
-            />
-          </label>
-        </div>
+        <h1>Create a user wallet with Google authentication</h1>
+        <p>Login via Google to obtain a Circle user token, then initialize and create the wallet.</p>
 
         <div>
           <button
-            onClick={handleRequestOtp}
+            onClick={handleGoogleLogin}
             style={{ margin: "6px" }}
-            disabled={!sdkReady || !deviceId || deviceIdLoading || !email}
+            disabled={!sdkReady || !deviceId || deviceIdLoading || !googleClientId}
           >
-            1. Send email OTP
+            1. Login with Google
           </button>
-          <br />
-          <button
-            onClick={handleVerifyOtp}
-            style={{ margin: "6px" }}
-            disabled={
-              !sdkReady || !deviceToken || !deviceEncryptionKey || !otpToken || !!loginResult
-            }
-          >
-            2. Verify email OTP
-          </button>
+          <div style={{ marginLeft: "6px", fontSize: "12px", color: "#555" }}>
+            Note: Google login requires an HTTPS redirect domain.
+          </div>
           <br />
           <button
             onClick={handleInitializeUser}
             style={{ margin: "6px" }}
             disabled={!loginResult || !!challengeId || wallets.length > 0}
           >
-            3. Initialize user (get challenge)
+            2. Initialize user (get challenge)
           </button>
           <br />
           <button
@@ -503,7 +556,7 @@ export default function HomePage() {
             style={{ margin: "6px" }}
             disabled={!challengeId || wallets.length > 0}
           >
-            4. Create wallet (execute challenge)
+            3. Create wallet (execute challenge)
           </button>
         </div>
 
@@ -526,6 +579,23 @@ export default function HomePage() {
                 <strong>USDC balance:</strong> {usdcBalance}
               </p>
             )}
+            <div style={{ marginTop: "8px" }}>
+              <strong>Gateway unified balance (USDC):</strong>{" "}
+              {gatewayLoading ? "Loading..." : gatewayTotal ?? "—"}
+              {gatewayError && (
+                <span style={{ marginLeft: "8px", color: "red" }}>{gatewayError}</span>
+              )}
+            </div>
+            {gatewayBalances.length > 0 && (
+              <div style={{ marginTop: "8px", fontSize: "12px" }}>
+                {gatewayBalances.map((b, idx) => (
+                  <div key={`${b.domain ?? "unknown"}-${idx}`}>
+                    Domain {b.domain ?? "?"}:{" "}
+                    {b.balance ? formatUnits(BigInt(b.balance), 6) : "—"}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -540,10 +610,9 @@ export default function HomePage() {
           {JSON.stringify(
             {
               deviceId,
-              email,
               deviceToken,
               deviceEncryptionKey,
-              otpToken,
+              socialReady,
               userToken: loginResult?.userToken,
               encryptionKey: loginResult?.encryptionKey,
               challengeId,

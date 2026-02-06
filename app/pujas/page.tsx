@@ -1,9 +1,17 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type Bid = { id: string; bidder: string; amount: number; ts: number };
 type SvgProps = { className?: string };
+type TokenBalanceEntry = {
+  amount?: string;
+  token?: {
+    symbol?: string;
+    name?: string;
+  };
+};
 
 const IconShield = ({ className = "" }: SvgProps) => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none">
@@ -162,6 +170,7 @@ function humanizeMinutes(mins: number) {
 }
 
 export default function AuctionPropertyView() {
+  const router = useRouter();
   // ----- Look & feel (marketplace-like)
   const ui = useMemo(
     () => ({
@@ -174,6 +183,10 @@ export default function AuctionPropertyView() {
     }),
     []
   );
+
+  const [walletAddress, setWalletAddress] = useState("");
+  const [walletBalance, setWalletBalance] = useState<string | null>(null);
+  const [walletStatus, setWalletStatus] = useState<string | null>(null);
 
   const property = useMemo(
     () => ({
@@ -193,10 +206,58 @@ export default function AuctionPropertyView() {
   const TOTAL_MS = TOTAL_HOURS * HOUR_MS;
 
   const [revealStartsAt] = useState(() => Date.now() - 35 * 60 * 1000);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
 
   const [demoMode, setDemoMode] = useState(false);
   const [demoMinutes, setDemoMinutes] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const address = window.localStorage.getItem("w3s_wallet_address") ?? "";
+    setWalletAddress(address);
+    setWalletBalance(window.localStorage.getItem("w3s_wallet_usdc"));
+
+    const userToken =
+      window.sessionStorage.getItem("w3s_user_token") ||
+      window.localStorage.getItem("w3s_user_token");
+    const walletId = window.localStorage.getItem("w3s_wallet_id");
+
+    if (!userToken || !walletId) {
+      setWalletStatus("Conecta tu wallet para pujar.");
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/endpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "getTokenBalance",
+            userToken,
+            walletId,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) return;
+
+        const balances = (data.tokenBalances as TokenBalanceEntry[]) || [];
+        const usdcEntry =
+          balances.find((t) => {
+            const symbol = t.token?.symbol || "";
+            const name = t.token?.name || "";
+            return symbol.toUpperCase().includes("USDC") || name.toUpperCase().includes("USDC");
+          }) ?? null;
+
+        const amount = usdcEntry?.amount ?? "0";
+        setWalletBalance(amount);
+        window.localStorage.setItem("w3s_wallet_usdc", amount);
+        setWalletStatus(null);
+      } catch {
+        setWalletStatus("No se pudo cargar el balance.");
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 250);
@@ -288,21 +349,29 @@ export default function AuctionPropertyView() {
   }, [currentBid]);
 
   const [bidInput, setBidInput] = useState<number>(() => currentBid + minIncrement);
-
-  useEffect(() => setBidInput(currentBid + minIncrement), [currentBid, minIncrement]);
+  const [bidError, setBidError] = useState<string | null>(null);
 
   const placeBid = () => {
+    if (!walletAddress) {
+      setBidError("Conecta tu wallet para pujar.");
+      router.push("/auth");
+      return;
+    }
+
     const amount = Math.floor(Number(bidInput) || 0);
     const min = currentBid + minIncrement;
     if (amount < min) {
       setBidInput(min);
+      setBidError(`Tu puja mínima es ${formatMoney(min, property.currency)}.`);
       return;
     }
-    const bidder = "0xfa15…2b2c";
+    setBidError(null);
+    const bidder = walletAddress;
     setBids((prev) => [
       { id: `b_${crypto.randomUUID?.() ?? Math.random().toString(16).slice(2)}`, bidder, amount, ts: Date.now() },
       ...prev,
     ]);
+    setBidInput(amount + minIncrement);
   };
 
   const diffAbs = currentBid - property.basePrice;
@@ -324,92 +393,132 @@ export default function AuctionPropertyView() {
           </div>
 
           {/* 3-hour reveal bar */}
-          <div className={`w-full sm:w-[460px] rounded-3xl ${ui.card} p-4`}>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs text-white/70">
-                <IconClock className="h-4 w-4 text-[#7DEAEA]" />
-                Revelación en <span className="text-white/85 font-semibold">{TOTAL_HOURS} horas</span>
+          <div className="flex w-full flex-col gap-4 sm:w-[460px]">
+            <div className={`rounded-3xl ${ui.card} p-4`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs text-white/70">
+                  <IconClock className="h-4 w-4 text-[#7DEAEA]" />
+                  Revelación en <span className="text-white/85 font-semibold">{TOTAL_HOURS} horas</span>
+                </div>
+
+                <label className="flex items-center gap-2 text-xs text-white/60 select-none">
+                  <input
+                    type="checkbox"
+                    checked={demoMode}
+                    onChange={(e) => {
+                      const v = e.target.checked;
+                      setDemoMode(v);
+                      if (v) setDemoMinutes(Math.floor(elapsedMs / (60 * 1000)));
+                    }}
+                    className="h-4 w-4 accent-[#2DD4D4]"
+                  />
+                  Demo
+                </label>
               </div>
 
-              <label className="flex items-center gap-2 text-xs text-white/60 select-none">
-                <input
-                  type="checkbox"
-                  checked={demoMode}
-                  onChange={(e) => {
-                    const v = e.target.checked;
-                    setDemoMode(v);
-                    if (v) setDemoMinutes(Math.floor(elapsedMs / (60 * 1000)));
-                  }}
-                  className="h-4 w-4 accent-[#2DD4D4]"
-                />
-                Demo
-              </label>
+              <div className="mt-3">
+                <div className="relative h-3 overflow-hidden rounded-full border border-white/[0.08] bg-black/35">
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full bg-[#2DD4D4] shadow-[0_0_30px_rgba(45,212,212,0.18)]"
+                    style={{ width: `${clamp(progress * 100, 0, 100)}%` }}
+                  />
+                  <div className="absolute inset-0 flex">
+                    <div className="flex-1 border-r border-white/[0.08]" />
+                    <div className="flex-1 border-r border-white/[0.08]" />
+                    <div className="flex-1" />
+                  </div>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between text-[11px] text-white/55">
+                  <span className={currentHourIndex >= 0 ? "text-[#7DEAEA]" : ""}>Hora 0 · Planos</span>
+                  <span className={currentHourIndex >= 1 ? "text-[#7DEAEA]" : ""}>Hora 1 · Zonas</span>
+                  <span className={currentHourIndex >= 2 ? "text-[#7DEAEA]" : ""}>Hora 2 · Docs</span>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between">
+                  <div className="text-xs text-white/60">
+                    Próximo reveal: <span className="text-white/80 font-semibold">{nextRevealLabel}</span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDemoMode(true);
+                        setDemoMinutes((m) => clamp(m + 15, 0, TOTAL_HOURS * 60));
+                      }}
+                      className={`rounded-2xl ${ui.pillMuted} px-3 py-1.5 text-xs hover:bg-white/[0.06]`}
+                    >
+                      +15m
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDemoMode(true);
+                        setDemoMinutes((m) => clamp(m + 60, 0, TOTAL_HOURS * 60));
+                      }}
+                      className={`rounded-2xl ${ui.pillMuted} px-3 py-1.5 text-xs hover:bg-white/[0.06]`}
+                    >
+                      +1h
+                    </button>
+                  </div>
+                </div>
+
+                {demoMode && (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-[11px] text-white/55">
+                      <span>Scrub</span>
+                      <span className="font-mono text-white/75">
+                        {clamp(demoMinutes, 0, TOTAL_HOURS * 60)} / {TOTAL_HOURS * 60} min
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={TOTAL_HOURS * 60}
+                      value={demoMinutes}
+                      onChange={(e) => setDemoMinutes(Number(e.target.value))}
+                      className="mt-2 w-full accent-[#2DD4D4]"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="mt-3">
-              <div className="relative h-3 overflow-hidden rounded-full border border-white/[0.08] bg-black/35">
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-[#2DD4D4] shadow-[0_0_30px_rgba(45,212,212,0.18)]"
-                  style={{ width: `${clamp(progress * 100, 0, 100)}%` }}
-                />
-                <div className="absolute inset-0 flex">
-                  <div className="flex-1 border-r border-white/[0.08]" />
-                  <div className="flex-1 border-r border-white/[0.08]" />
-                  <div className="flex-1" />
+            <div className={`rounded-3xl ${ui.card} p-4`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-white/70">
+                  <IconWallet className="h-4 w-4 text-[#7DEAEA]" />
+                  Mi cuenta
                 </div>
+                <button
+                  type="button"
+                  onClick={() => router.push(walletAddress ? "/cuenta" : "/auth")}
+                  className={`rounded-2xl px-3 py-1.5 text-xs ${ui.pillMuted} hover:bg-white/[0.06]`}
+                >
+                  {walletAddress ? "Ver wallet" : "Conectar"}
+                </button>
               </div>
 
-              <div className="mt-2 flex items-center justify-between text-[11px] text-white/55">
-                <span className={currentHourIndex >= 0 ? "text-[#7DEAEA]" : ""}>Hora 0 · Planos</span>
-                <span className={currentHourIndex >= 1 ? "text-[#7DEAEA]" : ""}>Hora 1 · Zonas</span>
-                <span className={currentHourIndex >= 2 ? "text-[#7DEAEA]" : ""}>Hora 2 · Docs</span>
-              </div>
-
-              <div className="mt-2 flex items-center justify-between">
-                <div className="text-xs text-white/60">
-                  Próximo reveal: <span className="text-white/80 font-semibold">{nextRevealLabel}</span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDemoMode(true);
-                      setDemoMinutes((m) => clamp(m + 15, 0, TOTAL_HOURS * 60));
-                    }}
-                    className={`rounded-2xl ${ui.pillMuted} px-3 py-1.5 text-xs hover:bg-white/[0.06]`}
-                  >
-                    +15m
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDemoMode(true);
-                      setDemoMinutes((m) => clamp(m + 60, 0, TOTAL_HOURS * 60));
-                    }}
-                    className={`rounded-2xl ${ui.pillMuted} px-3 py-1.5 text-xs hover:bg-white/[0.06]`}
-                  >
-                    +1h
-                  </button>
-                </div>
-              </div>
-
-              {demoMode && (
-                <div className="mt-3">
-                  <div className="flex items-center justify-between text-[11px] text-white/55">
-                    <span>Scrub</span>
-                    <span className="font-mono text-white/75">
-                      {clamp(demoMinutes, 0, TOTAL_HOURS * 60)} / {TOTAL_HOURS * 60} min
-                    </span>
+              {walletAddress ? (
+                <div className="mt-3 grid gap-3 text-xs text-white/70">
+                  <div className="rounded-2xl border border-white/[0.08] bg-black/35 px-3 py-2">
+                    <div className="text-[11px] text-white/55">Wallet</div>
+                    <div className="mt-1 text-sm text-white/85">
+                      {shortAddr(walletAddress)}
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={TOTAL_HOURS * 60}
-                    value={demoMinutes}
-                    onChange={(e) => setDemoMinutes(Number(e.target.value))}
-                    className="mt-2 w-full accent-[#2DD4D4]"
-                  />
+                  <div className="rounded-2xl border border-white/[0.08] bg-black/35 px-3 py-2">
+                    <div className="text-[11px] text-white/55">Balance USDC</div>
+                    <div className="mt-1 text-sm text-white/85">
+                      {walletBalance ?? "—"}
+                    </div>
+                  </div>
+                  {walletStatus && <div className="text-[11px] text-red-300">{walletStatus}</div>}
+                </div>
+              ) : (
+                <div className="mt-3 text-xs text-white/55">
+                  Conecta tu wallet para pujar con tu cuenta.
                 </div>
               )}
             </div>
@@ -512,6 +621,9 @@ export default function AuctionPropertyView() {
                         <IconArrowUpRight className="h-5 w-5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
                       </button>
                     </div>
+                    {bidError && (
+                      <div className="mt-2 text-xs text-red-300">{bidError}</div>
+                    )}
 
                     {/* Reveal cards */}
                     <div className={`mt-5 rounded-3xl ${ui.cardInner} p-4`}>

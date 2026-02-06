@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 interface Property {
@@ -13,12 +14,31 @@ interface Property {
   status: "Activa" | "Finalizada";
 }
 
+type TokenBalanceEntry = {
+  amount?: string;
+  token?: {
+    symbol?: string;
+    name?: string;
+  };
+};
+
 type Tab = "subasta" | "cerrada" | "mercado";
 type StatusFilter = "Todas" | "Activa" | "Finalizada";
 
 export default function MarketplacePage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [properties, setProperties] = useState<Property[]>([]);
+  const [showStreamCard, setShowStreamCard] = useState(false);
+  const [liveExploded, setLiveExploded] = useState(false);
+  const [walletAddress] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem("w3s_wallet_address") ?? "";
+  });
+  const [walletBalance, setWalletBalance] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem("w3s_wallet_usdc");
+  });
 
   // UI state
   const [activeTab, setActiveTab] = useState<Tab>("mercado");
@@ -26,6 +46,51 @@ export default function MarketplacePage() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
+    const streamTimer = setTimeout(() => {
+      setShowStreamCard(true);
+    }, 5000);
+
+    const userToken =
+      typeof window !== "undefined"
+        ? window.sessionStorage.getItem("w3s_user_token") ||
+          window.localStorage.getItem("w3s_user_token")
+        : null;
+    const walletId =
+      typeof window !== "undefined" ? window.localStorage.getItem("w3s_wallet_id") : null;
+
+    if (userToken && walletId) {
+      void (async () => {
+        try {
+          const response = await fetch("/api/endpoints", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "getTokenBalance",
+              userToken,
+              walletId,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            return;
+          }
+          const balances = (data.tokenBalances as TokenBalanceEntry[]) || [];
+          const usdcEntry =
+            balances.find((t) => {
+              const symbol = t.token?.symbol || "";
+              const name = t.token?.name || "";
+              return symbol.startsWith("USDC") || name.includes("USDC");
+            }) ?? null;
+          setWalletBalance(usdcEntry?.amount ?? "0");
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem("w3s_wallet_usdc", usdcEntry?.amount ?? "0");
+          }
+        } catch {
+          // no-op
+        }
+      })();
+    }
+
     const timeout = setTimeout(() => {
       const mockData: Property[] = [
         {
@@ -87,8 +152,19 @@ export default function MarketplacePage() {
       setLoading(false);
     }, 800);
 
-    return () => clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+      clearTimeout(streamTimer);
+    };
   }, []);
+
+  const handleAccountClick = () => {
+    if (walletAddress) {
+      router.push("/cuenta");
+      return;
+    }
+    router.push("/auth");
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -157,33 +233,10 @@ export default function MarketplacePage() {
 
           <div style={{ flex: 1 }} />
 
-          {/* Tabs */}
-          <nav
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              border: "1px solid rgba(255,255,255,0.10)",
-              borderRadius: 999,
-              padding: 6,
-              background: "rgba(255,255,255,0.03)",
-            }}
-          >
-            <TabBtn active={activeTab === "subasta"} onClick={() => setActiveTab("subasta")}>
-              Subasta
-            </TabBtn>
-            <TabBtn active={activeTab === "cerrada"} onClick={() => setActiveTab("cerrada")}>
-              Licitación cerrada
-            </TabBtn>
-            <TabBtn active={activeTab === "mercado"} onClick={() => setActiveTab("mercado")}>
-              Mercado Directo
-            </TabBtn>
-          </nav>
-
           {/* LIVE button (animado) */}
           <button
             type="button"
-            onClick={() => console.log("LIVE click")}
+            onClick={() => router.push("/pujas")}
             title="Entrar a Live"
             style={{
               display: "inline-flex",
@@ -192,15 +245,17 @@ export default function MarketplacePage() {
               padding: "10px 14px",
               borderRadius: 999,
               border: "1px solid rgba(255,255,255,0.14)",
-              background: "rgba(255,255,255,0.04)",
+              background: liveExploded ? "rgba(239, 68, 68, 0.95)" : "rgba(255,255,255,0.04)",
               color: "white",
-              fontWeight: 800,
+              fontWeight: 900,
               cursor: "pointer",
             }}
-            className="liveBtn"
+            className={`liveBtn ${liveExploded ? "liveBtnBig" : ""}`}
           >
             <span className="liveDot" aria-hidden="true" />
-            <span style={{ letterSpacing: 0.6 }}>LIVE</span>
+            <span style={{ letterSpacing: 0.6 }}>
+              {liveExploded ? "GRANDE LIVE" : "LIVE"}
+            </span>
           </button>
 
           {/* Volver */}
@@ -222,24 +277,44 @@ export default function MarketplacePage() {
           </Link>
 
           {/* User / Cuenta */}
-          <Link
-            href="/cuenta"
-            title="Mi cuenta"
-            style={{
-              width: 42,
-              height: 42,
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.14)",
-              background: "rgba(255,255,255,0.04)",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              textDecoration: "none",
-            }}
-          >
-            {/* Si tienes una imagen real, cambia a <img src="/user.png" ... /> */}
-            <UserAvatarIcon />
-          </Link>
+          <div className="userMenu" style={{ position: "relative" }}>
+            <button
+              type="button"
+              onClick={handleAccountClick}
+              title={walletAddress ? "Mi wallet" : "Iniciar sesión"}
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: "rgba(255,255,255,0.04)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              <UserAvatarIcon />
+            </button>
+
+            {walletAddress && (
+              <div className="walletPreview">
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+                  Wallet
+                </div>
+                <div style={{ fontSize: 12, color: "white", wordBreak: "break-all" }}>
+                  {walletAddress}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+                  Balance USDC
+                </div>
+                <div style={{ fontSize: 12, color: "white" }}>
+                  {walletBalance ?? "—"}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -382,7 +457,7 @@ export default function MarketplacePage() {
               {filtered.map((property) => (
                 <Link
                   key={property.id}
-                  href={`/casa/${property.id}`}
+                  href="/pujas"
                   style={{ textDecoration: "none", color: "inherit" }}
                 >
                   <article
@@ -527,6 +602,42 @@ export default function MarketplacePage() {
         </div>
       </section>
 
+      {showStreamCard && (
+        <div className="streamOverlay">
+          <div className="streamCard">
+            <button
+              type="button"
+              className="streamClose"
+              onClick={() => {
+                setShowStreamCard(false);
+                setLiveExploded(true);
+              }}
+              aria-label="Cerrar"
+            >
+              ×
+            </button>
+            <div className="streamVideo">
+              <video
+                src="/steam/kling_20260208_Image_to_Video_Animate_th_3148_0_2.mp4"
+                autoPlay
+                muted
+                loop
+                playsInline
+              />
+              <div className="streamBadge">Stream starting soon</div>
+              <div className="streamGlow" />
+            </div>
+            <button
+              type="button"
+              className="streamCta"
+              onClick={() => router.push("/pujas")}
+            >
+              Streaming →
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ====== Styles (LIVE anim + responsive) ====== */}
       <style jsx>{`
         .liveBtn {
@@ -559,6 +670,27 @@ export default function MarketplacePage() {
           animation: livePulse 1.2s infinite;
         }
 
+        .liveBtnBig {
+          border-color: rgba(239, 68, 68, 0.8);
+          box-shadow: 0 0 30px rgba(239, 68, 68, 0.45);
+          animation: liveBigFlash 0.7s infinite;
+        }
+
+        @keyframes liveBigFlash {
+          0% {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+            filter: brightness(1);
+          }
+          50% {
+            box-shadow: 0 0 0 12px rgba(239, 68, 68, 0.2);
+            filter: brightness(1.15);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+            filter: brightness(1);
+          }
+        }
+
         @keyframes livePulse {
           0% {
             box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.65);
@@ -581,10 +713,137 @@ export default function MarketplacePage() {
           box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
         }
 
+        .walletPreview {
+          position: absolute;
+          right: 0;
+          top: calc(100% + 8px);
+          min-width: 220px;
+          max-width: 320px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(10px);
+          box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+          opacity: 0;
+          transform: translateY(-4px);
+          pointer-events: none;
+          transition: opacity 160ms ease, transform 160ms ease;
+        }
+
+        .userMenu:hover .walletPreview {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
         @media (max-width: 980px) {
           .marketLayout {
             grid-template-columns: 1fr !important;
           }
+        }
+
+        .streamOverlay {
+          position: fixed;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 80;
+          pointer-events: none;
+        }
+
+        .streamCard {
+          width: 280px;
+          height: 280px;
+          border-radius: 18px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(8, 8, 8, 0.9);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+          padding: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          position: relative;
+          pointer-events: auto;
+        }
+
+        .streamClose {
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          width: 28px;
+          height: 28px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          background: rgba(255, 255, 255, 0.08);
+          color: white;
+          font-size: 18px;
+          line-height: 1;
+          cursor: pointer;
+        }
+
+        .streamVideo {
+          flex: 1;
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: radial-gradient(circle at 20% 20%, rgba(103, 232, 249, 0.2), transparent 50%),
+            radial-gradient(circle at 80% 80%, rgba(239, 68, 68, 0.25), transparent 50%),
+            rgba(255, 255, 255, 0.03);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .streamVideo video {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          z-index: 1;
+          filter: saturate(1.05);
+        }
+
+        .streamBadge {
+          z-index: 2;
+          padding: 8px 12px;
+          border-radius: 999px;
+          background: rgba(0, 0, 0, 0.6);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          font-size: 12px;
+        }
+
+        .streamGlow {
+          position: absolute;
+          inset: 0;
+          background: conic-gradient(from 180deg, rgba(103, 232, 249, 0.2), rgba(239, 68, 68, 0.2), rgba(103, 232, 249, 0.2));
+          animation: streamPulse 3s linear infinite;
+          opacity: 0.5;
+        }
+
+        @keyframes streamPulse {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+
+        .streamCta {
+          border-radius: 12px;
+          border: 1px solid rgba(103, 232, 249, 0.4);
+          background: rgba(103, 232, 249, 0.15);
+          color: #67e8f9;
+          font-weight: 800;
+          padding: 10px 12px;
+          cursor: pointer;
+          text-align: center;
         }
       `}</style>
     </main>
