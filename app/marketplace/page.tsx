@@ -2,517 +2,519 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ethers } from "ethers";
 import Header from "../components/Header";
 
-interface Property {
-  id: string;
-  title: string;
-  location: string;
-  details: string;
-  image: string;
-  price: number;
-  status: "Activa" | "Finalizada";
-}
+// ============ CONSTANTS ============
 
-type TokenBalanceEntry = {
-  amount?: string;
-  token?: {
-    symbol?: string;
-    name?: string;
-  };
+const DEFAULT_RPC_BY_CHAIN: Record<number, string> = {
+  84532: "https://sepolia.base.org",
+  8453: "https://mainnet.base.org",
+  5042002: "https://rpc.testnet.arc.network",
 };
 
-type Tab = "subasta" | "cerrada" | "mercado";
+const CHAIN_DEPLOYMENTS: Record<
+  number,
+  {
+    chainId: number;
+    chainName: string;
+    explorer: string;
+    contracts: {
+      HouseNFT: string;
+      AuctionFactory: string;
+      AuctionManager: string;
+    };
+    usdc: string;
+  }
+> = {
+  8453: {
+    chainId: 8453,
+    chainName: "Base Mainnet",
+    explorer: "https://base.blockscout.com",
+    contracts: {
+      HouseNFT: "0x44b659c474d1bcb0e6325ae17c882994d772e471",
+      AuctionFactory: "0x1d5854ef9b5fd15e1f477a7d15c94ea0e795d9a5",
+      AuctionManager: "0x24220aeb9360aaf896c99060c53332258736e30d",
+    },
+    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  },
+  84532: {
+    chainId: 84532,
+    chainName: "Base Sepolia",
+    explorer: "https://base-sepolia.blockscout.com",
+    contracts: {
+      HouseNFT: "0x3911826c047726de1881f5518faa06e06413aba6",
+      AuctionFactory: "0xd13e24354d6e9706b4bc89272e31374ec71a2e75",
+      AuctionManager: "0x4aee0c5afe353fb9fa111e0b5221db715b53cb10",
+    },
+    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  },
+  5042002: {
+    chainId: 5042002,
+    chainName: "Arc Testnet",
+    explorer: "https://testnet.arcscan.app",
+    contracts: {
+      HouseNFT: "0x6bb77d0b235d4d27f75ae0e3a4f465bf8ac91c0b",
+      AuctionFactory: "0x88cc60b8a6161758b176563c78abeb7495d664d1",
+      AuctionManager: "0x2fbaed3a30a53bd61676d9c5f46db5a73f710f53",
+    },
+    usdc: "0x3600000000000000000000000000000000000000",
+  },
+};
+
+// ============ ABIs ============
+
+const FACTORY_ABI = [
+  "function getAuctions() view returns (address[])",
+  "function getAuctionCount() view returns (uint256)",
+];
+
+const AUCTION_ABI = [
+  "function nftContract() view returns (address)",
+  "function tokenId() view returns (uint256)",
+  "function floorPrice() view returns (uint256)",
+  "function currentPhase() view returns (uint8)",
+  "function currentLeader() view returns (address)",
+  "function currentHighBid() view returns (uint256)",
+  "function winner() view returns (address)",
+  "function finalized() view returns (bool)",
+  "function paused() view returns (bool)",
+  "function getTimeRemaining() view returns (uint256)",
+  "function getBidderCount() view returns (uint256)",
+];
+
+const NFT_ABI = [
+  "function tokenURI(uint256) view returns (string)",
+  "function ownerOf(uint256) view returns (address)",
+];
+
+// ============ TYPES ============
+
+interface AuctionData {
+  address: string;
+  nftContract: string;
+  tokenId: bigint;
+  floorPrice: bigint;
+  currentPhase: number;
+  currentLeader: string;
+  currentHighBid: bigint;
+  winner: string;
+  finalized: boolean;
+  paused: boolean;
+  timeRemaining: bigint;
+  bidderCount: number;
+  // Metadata (optional, from NFT URI)
+  title?: string;
+  location?: string;
+  image?: string;
+}
+
 type StatusFilter = "Todas" | "Activa" | "Finalizada";
+
+// ============ HELPERS ============
+
+const shortAddr = (addr: string) => (addr && addr.length > 12 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr || "-");
+
+const formatUsdc = (amount: bigint) => {
+  return Number(ethers.formatUnits(amount, 6)).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+};
+
+const formatTimeRemaining = (seconds: bigint) => {
+  const s = Number(seconds);
+  if (s <= 0) return "Ended";
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+};
+
+// Property images (for demo display when no NFT metadata available)
+const PROPERTY_IMAGES = [
+  "/marketplace/ALH_Taller_Edificio_E_Cam_01_2025_06_07.jpg",
+  "/marketplace/ALH_Taller_Edificio_E_Cam_03_2025_06_07.jpg",
+  "/marketplace/ALH_Taller_Edificio_E_Cam_04_2025_06_07.jpg",
+  "/marketplace/ALH_Taller_Edificio_E_Cam_05_2025_06_07.jpg",
+  "/marketplace/ALH_Taller_Edificio_E_Cam_06_2025_06_07.jpg",
+  "/marketplace/AIN2402_AO_TTA_YAV_AV_947_ZonasComunes_04.jpg",
+];
+
+const PROPERTY_TITLES = [
+  "Modern Family House",
+  "Luxurious Villa",
+  "Country Cottage",
+  "Beachfront Mansion",
+  "Suburban House",
+  "Mountain Retreat",
+];
+
+const PROPERTY_LOCATIONS = [
+  "San Francisco, CA",
+  "Miami, FL",
+  "Denver, CO",
+  "Malibu, CA",
+  "Seattle, WA",
+  "Aspen, CO",
+];
+
+// ============ COMPONENT ============
 
 export default function MarketplacePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [properties, setProperties] = useState<Property[]>([]);
+  const [auctions, setAuctions] = useState<AuctionData[]>([]);
   const [showStreamCard, setShowStreamCard] = useState(false);
   const [liveExploded, setLiveExploded] = useState(false);
-  const [walletAddress] = useState<string>(() => {
-    if (typeof window === "undefined") return "";
-    return window.localStorage.getItem("w3s_wallet_address") ?? "";
-  });
-  const [walletBalance, setWalletBalance] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem("w3s_wallet_usdc");
-  });
+
+  // Chain selection
+  const [selectedChainId, setSelectedChainId] = useState<number>(84532);
+  const chainConfig = CHAIN_DEPLOYMENTS[selectedChainId];
+
+  const rpcUrl = useMemo(() => {
+    const envKey = {
+      84532: process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL,
+      8453: process.env.NEXT_PUBLIC_BASE_MAINNET_RPC_URL,
+      5042002: process.env.NEXT_PUBLIC_ARC_TESTNET_RPC_URL,
+    }[selectedChainId];
+    return envKey ?? DEFAULT_RPC_BY_CHAIN[selectedChainId];
+  }, [selectedChainId]);
+
+  const rpcProvider = useMemo(
+    () => (rpcUrl ? new ethers.JsonRpcProvider(rpcUrl) : null),
+    [rpcUrl]
+  );
 
   // UI state
-  const [activeTab, setActiveTab] = useState<Tab>("mercado");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("Todas");
   const [search, setSearch] = useState("");
+
+  // Fetch auctions from factory
+  const fetchAuctions = useCallback(async () => {
+    if (!rpcProvider) return;
+
+    setLoading(true);
+    try {
+      const factory = new ethers.Contract(chainConfig.contracts.AuctionFactory, FACTORY_ABI, rpcProvider);
+
+      // Get all auction addresses
+      let auctionAddresses: string[] = [];
+      try {
+        auctionAddresses = await factory.getAuctions();
+      } catch {
+        // If getAuctions fails, try just the default AuctionManager
+        auctionAddresses = [chainConfig.contracts.AuctionManager];
+      }
+
+      // Always include the default AuctionManager if not in list
+      if (!auctionAddresses.includes(chainConfig.contracts.AuctionManager)) {
+        auctionAddresses = [chainConfig.contracts.AuctionManager, ...auctionAddresses];
+      }
+
+      // Fetch data for each auction
+      const auctionDataPromises = auctionAddresses.map(async (addr, index) => {
+        try {
+          const auction = new ethers.Contract(addr, AUCTION_ABI, rpcProvider);
+          const [
+            nftContract,
+            tokenId,
+            floorPrice,
+            currentPhase,
+            currentLeader,
+            currentHighBid,
+            winner,
+            finalized,
+            paused,
+          ] = await Promise.all([
+            auction.nftContract().catch(() => ethers.ZeroAddress),
+            auction.tokenId().catch(() => BigInt(0)),
+            auction.floorPrice().catch(() => BigInt(0)),
+            auction.currentPhase().catch(() => 0),
+            auction.currentLeader().catch(() => ethers.ZeroAddress),
+            auction.currentHighBid().catch(() => BigInt(0)),
+            auction.winner().catch(() => ethers.ZeroAddress),
+            auction.finalized().catch(() => false),
+            auction.paused().catch(() => false),
+          ]);
+
+          let timeRemaining = BigInt(0);
+          let bidderCount = 0;
+          try {
+            timeRemaining = await auction.getTimeRemaining();
+            bidderCount = Number(await auction.getBidderCount());
+          } catch {
+            // Some auctions might not have these methods
+          }
+
+          return {
+            address: addr,
+            nftContract,
+            tokenId,
+            floorPrice,
+            currentPhase: Number(currentPhase),
+            currentLeader,
+            currentHighBid,
+            winner,
+            finalized,
+            paused,
+            timeRemaining,
+            bidderCount,
+            // Use demo data for display
+            title: PROPERTY_TITLES[index % PROPERTY_TITLES.length],
+            location: PROPERTY_LOCATIONS[index % PROPERTY_LOCATIONS.length],
+            image: PROPERTY_IMAGES[index % PROPERTY_IMAGES.length],
+          } as AuctionData;
+        } catch (error) {
+          console.error(`Failed to fetch auction ${addr}:`, error);
+          return null;
+        }
+      });
+
+      const results = await Promise.all(auctionDataPromises);
+      const validAuctions = results.filter((a): a is AuctionData => a !== null);
+      setAuctions(validAuctions);
+    } catch (error) {
+      console.error("Failed to fetch auctions:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [rpcProvider, chainConfig]);
+
+  useEffect(() => {
+    fetchAuctions();
+    const interval = setInterval(fetchAuctions, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, [fetchAuctions]);
 
   useEffect(() => {
     const streamTimer = setTimeout(() => {
       setShowStreamCard(true);
     }, 5000);
-
-    const userToken =
-      typeof window !== "undefined"
-        ? window.sessionStorage.getItem("w3s_user_token") ||
-          window.localStorage.getItem("w3s_user_token")
-        : null;
-    const walletId =
-      typeof window !== "undefined" ? window.localStorage.getItem("w3s_wallet_id") : null;
-
-    if (userToken && walletId) {
-      void (async () => {
-        try {
-          const response = await fetch("/api/endpoints", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "getTokenBalance",
-              userToken,
-              walletId,
-            }),
-          });
-          const data = await response.json();
-          if (!response.ok) {
-            return;
-          }
-          const balances = (data.tokenBalances as TokenBalanceEntry[]) || [];
-          const usdcEntry =
-            balances.find((t) => {
-              const symbol = t.token?.symbol || "";
-              const name = t.token?.name || "";
-              return symbol.startsWith("USDC") || name.includes("USDC");
-            }) ?? null;
-          setWalletBalance(usdcEntry?.amount ?? "0");
-          if (typeof window !== "undefined") {
-            window.localStorage.setItem("w3s_wallet_usdc", usdcEntry?.amount ?? "0");
-          }
-        } catch {
-          // no-op
-        }
-      })();
-    }
-
-    const timeout = setTimeout(() => {
-      const mockData: Property[] = [
-        {
-          id: "1",
-          title: "Modern Family House",
-          location: "San Francisco, CA",
-          details: "5BR, 3BA",
-          image: "/marketplace/ALH_Taller_Edificio_E_Cam_01_2025_06_07.jpg",
-          price: 550000,
-          status: "Activa",
-        },
-        {
-          id: "2",
-          title: "Luxurious Villa",
-          location: "Miami, FL",
-          details: "6BR, 6BA, Pool",
-          image: "/marketplace/ALH_Taller_Edificio_E_Cam_03_2025_06_07.jpg",
-          price: 1250000,
-          status: "Activa",
-        },
-        {
-          id: "3",
-          title: "Country Cottage",
-          location: "Denver, CO",
-          details: "2BR, 2BA",
-          image: "/marketplace/ALH_Taller_Edificio_E_Cam_04_2025_06_07.jpg",
-          price: 350000,
-          status: "Finalizada",
-        },
-        {
-          id: "4",
-          title: "Beachfront Mansion",
-          location: "Malibu, CA",
-          details: "6BR, 6BA",
-          image: "/marketplace/ALH_Taller_Edificio_E_Cam_05_2025_06_07.jpg",
-          price: 2300000,
-          status: "Activa",
-        },
-        {
-          id: "5",
-          title: "Suburban House",
-          location: "Seattle, WA",
-          details: "3BR, 2BA",
-          image: "/marketplace/ALH_Taller_Edificio_E_Cam_06_2025_06_07.jpg",
-          price: 450000,
-          status: "Activa",
-        },
-        {
-          id: "6",
-          title: "Mountain Retreat",
-          location: "Aspen, CO",
-          details: "4BR, 3BA",
-          image: "/marketplace/AIN2402_AO_TTA_YAV_AV_947_ZonasComunes_04.jpg",
-          price: 750000,
-          status: "Activa",
-        },
-      ];
-      setProperties(mockData);
-      setLoading(false);
-    }, 800);
-
-    return () => {
-      clearTimeout(timeout);
-      clearTimeout(streamTimer);
-    };
+    return () => clearTimeout(streamTimer);
   }, []);
 
-  const handleAccountClick = () => {
-    if (walletAddress) {
-      router.push("/cuenta");
-      return;
-    }
-    router.push("/auth");
-  };
-
+  // Filter auctions
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return properties.filter((p) => {
-      const matchStatus = statusFilter === "Todas" ? true : p.status === statusFilter;
+    return auctions.filter((a) => {
+      const isActive = !a.finalized && !a.paused;
+      const matchStatus =
+        statusFilter === "Todas"
+          ? true
+          : statusFilter === "Activa"
+          ? isActive
+          : a.finalized;
       const matchQuery =
         q.length === 0
           ? true
-          : `${p.title} ${p.location} ${p.details}`.toLowerCase().includes(q);
+          : `${a.title ?? ""} ${a.location ?? ""} ${a.address}`.toLowerCase().includes(q);
       return matchStatus && matchQuery;
     });
-  }, [properties, statusFilter, search]);
+  }, [auctions, statusFilter, search]);
+
+  const activeCount = auctions.filter((a) => !a.finalized && !a.paused).length;
+  const finalizedCount = auctions.filter((a) => a.finalized).length;
 
   if (loading) {
     return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "black",
-          color: "white",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <span style={{ fontSize: "1.25rem", opacity: 0.8 }}>
-          Cargando propiedades...
-        </span>
+      <main className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent mb-4" />
+          <div className="text-lg opacity-80">Loading auctions from {chainConfig.chainName}...</div>
+        </div>
       </main>
     );
   }
 
   return (
-    <main style={{ minHeight: "100vh", background: "black", color: "white" }}>
+    <main className="min-h-screen bg-black text-white">
       <Header />
 
       {/* ====== LIVE BUTTON (floating) ====== */}
-      <div
-        style={{
-          position: "fixed",
-          top: 80,
-          right: 20,
-          zIndex: 40,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => router.push("/pujas")}
-          title="Entrar a Live"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "10px 14px",
-            borderRadius: 999,
-            border: "1px solid rgba(255,255,255,0.14)",
-            background: liveExploded ? "rgba(239, 68, 68, 0.95)" : "rgba(255,255,255,0.04)",
-            color: "white",
-            fontWeight: 900,
-            cursor: "pointer",
-          }}
-          className={`liveBtn ${liveExploded ? "liveBtnBig" : ""}`}
-        >
-          <span className="liveDot" aria-hidden="true" />
-          <span style={{ letterSpacing: 0.6 }}>
-            {liveExploded ? "GRANDE LIVE" : "LIVE"}
-          </span>
-        </button>
-      </div>
+      {filtered.length > 0 && (
+        <div className="fixed top-20 right-5 z-40">
+          <Link
+            href={`/pujas?auction=${filtered[0].address}`}
+            className={`inline-flex items-center gap-2.5 px-3.5 py-2.5 rounded-full border transition-all ${
+              liveExploded
+                ? "bg-red-500/95 border-red-500/80 shadow-[0_0_30px_rgba(239,68,68,0.45)] animate-pulse"
+                : "bg-white/[0.04] border-white/[0.14] hover:bg-white/[0.08]"
+            }`}
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="font-black tracking-wide text-sm">
+              {liveExploded ? "JOIN LIVE" : "LIVE"}
+            </span>
+          </Link>
+        </div>
+      )}
 
       {/* ====== CONTENT ====== */}
-      <section style={{ padding: "22px 16px" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+      <section className="px-4 py-6">
+        <div className="max-w-[1200px] mx-auto">
           {/* Top controls */}
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-              marginBottom: 18,
-            }}
-          >
-            <div style={{ color: "#9ca3af", fontSize: 14 }}>
-              📍 Haz clic en una propiedad para ver más detalles
+          <div className="flex gap-3 flex-wrap items-center mb-5">
+            <div className="text-gray-400 text-sm">
+              {auctions.length} auctions on-chain
             </div>
 
-            <div style={{ flex: 1 }} />
+            <div className="flex-1" />
 
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: 10,
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.10)",
-                background: "rgba(255,255,255,0.03)",
-                minWidth: 280,
-              }}
+            <select
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm"
+              value={selectedChainId}
+              onChange={(e) => setSelectedChainId(Number(e.target.value))}
             >
-              <span style={{ color: "#9ca3af", fontSize: 12 }}>Buscar</span>
+              {Object.values(CHAIN_DEPLOYMENTS).map((c) => (
+                <option key={c.chainId} value={c.chainId}>
+                  {c.chainName}
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={fetchAuctions}
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+            >
+              Refresh
+            </button>
+
+            <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-white/10 bg-white/[0.03] min-w-[280px]">
+              <span className="text-gray-400 text-xs">Search</span>
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Ej: Miami, Villa, 4BR..."
-                style={{
-                  flex: 1,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  color: "white",
-                  fontSize: 14,
-                }}
+                placeholder="Address, title..."
+                className="flex-1 bg-transparent border-none outline-none text-white text-sm"
               />
             </div>
           </div>
 
           {/* Grid layout: Sidebar + Marketplace */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "280px 1fr",
-              gap: 16,
-            }}
-            className="marketLayout"
-          >
+          <div className="grid grid-cols-[280px_1fr] gap-4 marketLayout">
             {/* Sidebar */}
-            <aside
-              style={{
-                borderRadius: 16,
-                border: "1px solid rgba(255,255,255,0.10)",
-                background: "rgba(255,255,255,0.03)",
-                padding: 14,
-                height: "fit-content",
-              }}
-            >
-              <div style={{ fontWeight: 900, marginBottom: 10 }}>Filtros</div>
+            <aside className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 h-fit">
+              <div className="font-black mb-2.5">Filters</div>
 
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 8 }}>
-                Estado
-              </div>
+              <div className="text-xs text-gray-400 mb-2">Status</div>
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div className="flex gap-2 flex-wrap">
                 <Chip active={statusFilter === "Todas"} onClick={() => setStatusFilter("Todas")}>
-                  Todas
+                  All
                 </Chip>
                 <Chip active={statusFilter === "Activa"} onClick={() => setStatusFilter("Activa")}>
-                  Activas
+                  Active
                 </Chip>
-                <Chip
-                  active={statusFilter === "Finalizada"}
-                  onClick={() => setStatusFilter("Finalizada")}
-                >
-                  Finalizadas
+                <Chip active={statusFilter === "Finalizada"} onClick={() => setStatusFilter("Finalizada")}>
+                  Ended
                 </Chip>
               </div>
 
-              <div
-                style={{
-                  marginTop: 14,
-                  paddingTop: 14,
-                  borderTop: "1px solid rgba(255,255,255,0.08)",
-                }}
-              >
-                <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 8 }}>
-                  Resumen
-                </div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  <MiniStat label="Total" value={String(properties.length)} />
-                  <MiniStat
-                    label="Activas"
-                    value={String(properties.filter((p) => p.status === "Activa").length)}
-                  />
-                  <MiniStat
-                    label="Finalizadas"
-                    value={String(properties.filter((p) => p.status === "Finalizada").length)}
-                  />
+              <div className="mt-3.5 pt-3.5 border-t border-white/[0.08]">
+                <div className="text-xs text-gray-400 mb-2">Summary</div>
+                <div className="grid gap-2">
+                  <MiniStat label="Total" value={String(auctions.length)} />
+                  <MiniStat label="Active" value={String(activeCount)} />
+                  <MiniStat label="Ended" value={String(finalizedCount)} />
                 </div>
               </div>
 
-              <div
-                style={{
-                  marginTop: 14,
-                  padding: 12,
-                  borderRadius: 14,
-                  border: "1px solid rgba(103,232,249,0.22)",
-                  background: "rgba(103,232,249,0.06)",
-                  color: "#e5e7eb",
-                  fontSize: 13,
-                  lineHeight: 1.35,
-                }}
-              >
-                <b style={{ color: "#67e8f9" }}>Tip:</b> pon “LIVE” arriba para que el
-                usuario sienta que esto está ocurriendo en tiempo real.
+              <div className="mt-3.5 p-3 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] text-gray-200 text-[13px] leading-tight">
+                <b className="text-cyan-400">Tip:</b> Click any property to place a bid on-chain with USDC.
               </div>
             </aside>
 
             {/* Marketplace grid */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-                gap: 14,
-              }}
-            >
-              {filtered.map((property) => (
-                <Link
-                  key={property.id}
-                  href="/pujas"
-                  style={{ textDecoration: "none", color: "inherit" }}
-                >
-                  <article
-                    className="card"
-                    style={{
-                      borderRadius: 16,
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      overflow: "hidden",
-                      background: "rgba(255,255,255,0.03)",
-                      position: "relative",
-                      transform: "translateZ(0)",
-                    }}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
+              {filtered.map((auction, idx) => {
+                const isActive = !auction.finalized && !auction.paused;
+                const phaseLabels = ["Phase 0", "Phase 1", "Phase 2", "Final"];
+                const phaseLabel = phaseLabels[Math.min(auction.currentPhase, 3)];
+
+                return (
+                  <Link
+                    key={auction.address}
+                    href={`/pujas?auction=${auction.address}`}
+                    className="block no-underline text-inherit"
                   >
-                    <div style={{ position: "relative" }}>
-                      <img
-                        src={property.image}
-                        alt={property.title}
-                        style={{
-                          width: "100%",
-                          height: 170,
-                          objectFit: "cover",
-                          display: "block",
-                          filter: "contrast(1.05) saturate(1.05)",
-                        }}
-                      />
+                    <article className="card rounded-2xl border border-white/10 overflow-hidden bg-white/[0.03] relative transition-all hover:-translate-y-0.5 hover:border-cyan-400/30 hover:shadow-[0_18px_50px_rgba(0,0,0,0.45)]">
+                      <div className="relative">
+                        <img
+                          src={auction.image || PROPERTY_IMAGES[idx % PROPERTY_IMAGES.length]}
+                          alt={auction.title || `Auction ${idx + 1}`}
+                          className="w-full h-[170px] object-cover block"
+                          style={{ filter: "contrast(1.05) saturate(1.05)" }}
+                        />
 
-                      {/* Badge estado */}
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: 12,
-                          left: 12,
-                          padding: "7px 10px",
-                          borderRadius: 999,
-                          fontSize: 12,
-                          fontWeight: 900,
-                          border: "1px solid rgba(255,255,255,0.14)",
-                          background:
-                            property.status === "Activa"
-                              ? "rgba(34,197,94,0.18)"
-                              : "rgba(239,68,68,0.18)",
-                          color: property.status === "Activa" ? "#86efac" : "#fca5a5",
-                        }}
-                      >
-                        {property.status}
+                        {/* Status Badge */}
+                        <div
+                          className={`absolute top-3 left-3 px-2.5 py-1.5 rounded-full text-xs font-black border ${
+                            isActive
+                              ? "bg-green-500/20 border-green-500/30 text-green-300"
+                              : "bg-red-500/20 border-red-500/30 text-red-300"
+                          }`}
+                        >
+                          {isActive ? "Active" : "Ended"}
+                        </div>
+
+                        {/* Phase Badge */}
+                        <div className="absolute top-3 right-3 px-2.5 py-1.5 rounded-full text-xs font-bold border border-white/20 bg-black/50 text-white/80">
+                          {phaseLabel}
+                        </div>
+
+                        {/* Overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+
+                        {/* Time remaining */}
+                        {isActive && (
+                          <div className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/60 border border-white/10 text-xs text-white/80">
+                            <span className="text-cyan-400">⏱</span>
+                            {formatTimeRemaining(auction.timeRemaining)}
+                          </div>
+                        )}
                       </div>
 
-                      {/* overlay suave */}
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          background:
-                            "linear-gradient(to top, rgba(0,0,0,0.70), rgba(0,0,0,0.15), rgba(0,0,0,0))",
-                        }}
-                      />
-                    </div>
-
-                    <div style={{ padding: 14 }}>
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 900, color: "#e5e7eb", lineHeight: 1.2 }}>
-                            {property.title}
+                      <div className="p-3.5">
+                        <div className="flex items-start gap-2.5">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-black text-gray-200 leading-tight truncate">
+                              {auction.title || `Property #${Number(auction.tokenId)}`}
+                            </div>
+                            <div className="mt-1.5 text-xs text-gray-400 truncate">
+                              {auction.location || shortAddr(auction.address)}
+                            </div>
                           </div>
-                          <div style={{ marginTop: 6, fontSize: 12, color: "#9ca3af" }}>
-                            {property.location} · {property.details}
+
+                          <div className="px-2.5 py-2 rounded-xl border border-cyan-400/25 bg-cyan-400/[0.06] text-cyan-400 font-black text-xs whitespace-nowrap">
+                            ${formatUsdc(auction.currentHighBid > BigInt(0) ? auction.currentHighBid : auction.floorPrice)}
                           </div>
                         </div>
 
-                        <div
-                          style={{
-                            padding: "8px 10px",
-                            borderRadius: 12,
-                            border: "1px solid rgba(103,232,249,0.28)",
-                            background: "rgba(103,232,249,0.06)",
-                            color: "#67e8f9",
-                            fontWeight: 900,
-                            fontSize: 12,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          ${property.price.toLocaleString()}
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
-                        <div
-                          style={{
-                            flex: 1,
-                            padding: "10px 12px",
-                            borderRadius: 12,
-                            border: "1px solid rgba(255,255,255,0.10)",
-                            background: "rgba(255,255,255,0.03)",
-                            color: "#e5e7eb",
-                            fontWeight: 800,
-                            textAlign: "center",
-                            fontSize: 13,
-                          }}
-                        >
-                          Ver detalles
+                        {/* Stats row */}
+                        <div className="mt-3 flex gap-2 text-xs text-gray-400">
+                          <div className="flex-1 px-2 py-1.5 rounded-lg border border-white/[0.08] bg-black/25 text-center">
+                            <span className="text-white/70">{auction.bidderCount}</span> bidders
+                          </div>
+                          <div className="flex-1 px-2 py-1.5 rounded-lg border border-white/[0.08] bg-black/25 text-center truncate">
+                            Leader: <span className="text-cyan-400">{shortAddr(auction.currentLeader)}</span>
+                          </div>
                         </div>
 
-                        <div
-                          style={{
-                            width: 44,
-                            height: 40,
-                            borderRadius: 12,
-                            border: "1px solid rgba(255,255,255,0.10)",
-                            background: "rgba(255,255,255,0.03)",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "#9ca3af",
-                            fontWeight: 900,
-                          }}
-                          title="Guardar"
-                        >
-                          ☆
+                        {/* Action */}
+                        <div className="mt-3 flex gap-2.5">
+                          <div className="flex-1 px-3 py-2.5 rounded-xl border border-white/10 bg-white/[0.03] text-gray-200 font-bold text-center text-sm hover:bg-white/[0.06] transition-colors">
+                            {isActive ? "Place Bid" : "View Details"}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </article>
-                </Link>
-              ))}
+                    </article>
+                  </Link>
+                );
+              })}
 
               {filtered.length === 0 && (
-                <div
-                  style={{
-                    gridColumn: "1 / -1",
-                    padding: 18,
-                    borderRadius: 16,
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    background: "rgba(255,255,255,0.03)",
-                    color: "#9ca3af",
-                  }}
-                >
-                  No hay resultados con esos filtros / búsqueda.
+                <div className="col-span-full p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-gray-400 text-center">
+                  No auctions found with the current filters.
                 </div>
               )}
             </div>
@@ -520,248 +522,48 @@ export default function MarketplacePage() {
         </div>
       </section>
 
-      {showStreamCard && (
-        <div className="streamOverlay">
-          <div className="streamCard">
+      {showStreamCard && filtered.length > 0 && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
+          <div className="w-[280px] h-[280px] rounded-2xl border border-white/[0.12] bg-[#080808]/90 shadow-[0_20px_60px_rgba(0,0,0,0.5)] p-3.5 flex flex-col gap-3 relative pointer-events-auto">
             <button
               type="button"
-              className="streamClose"
+              className="absolute top-2 right-2 w-7 h-7 rounded-full border border-white/20 bg-white/[0.08] text-white text-lg leading-none cursor-pointer hover:bg-white/[0.15]"
               onClick={() => {
                 setShowStreamCard(false);
                 setLiveExploded(true);
               }}
-              aria-label="Cerrar"
             >
               ×
             </button>
-            <div className="streamVideo">
+            <div className="flex-1 rounded-xl border border-white/[0.12] bg-gradient-to-br from-cyan-400/20 to-red-500/20 flex items-center justify-center text-white font-bold relative overflow-hidden">
               <video
                 src="/steam/kling_20260208_Image_to_Video_Animate_th_3148_0_2.mp4"
                 autoPlay
                 muted
                 loop
                 playsInline
+                className="absolute inset-0 w-full h-full object-cover z-[1]"
+                style={{ filter: "saturate(1.05)" }}
               />
-              <div className="streamBadge">Stream starting soon</div>
-              <div className="streamGlow" />
+              <div className="z-[2] px-3 py-2 rounded-full bg-black/60 border border-white/20 text-xs">
+                Live auction starting
+              </div>
             </div>
-            <button
-              type="button"
-              className="streamCta"
-              onClick={() => router.push("/pujas")}
+            <Link
+              href={`/pujas?auction=${filtered[0].address}`}
+              className="rounded-xl border border-cyan-400/40 bg-cyan-400/15 text-cyan-400 font-bold px-3 py-2.5 cursor-pointer text-center no-underline hover:bg-cyan-400/25 transition-colors"
             >
-              Streaming →
-            </button>
+              Join Auction →
+            </Link>
           </div>
         </div>
       )}
 
-      {/* ====== Styles (LIVE anim + responsive) ====== */}
       <style jsx>{`
-        .liveBtn {
-          position: relative;
-          overflow: hidden;
-        }
-        .liveBtn::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background: radial-gradient(
-            circle at 30% 30%,
-            rgba(239, 68, 68, 0.18),
-            rgba(0, 0, 0, 0)
-          );
-          opacity: 0;
-          transition: opacity 200ms ease;
-          pointer-events: none;
-        }
-        .liveBtn:hover::after {
-          opacity: 1;
-        }
-
-        .liveDot {
-          width: 10px;
-          height: 10px;
-          border-radius: 999px;
-          background: rgb(239, 68, 68);
-          box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
-          animation: livePulse 1.2s infinite;
-        }
-
-        .liveBtnBig {
-          border-color: rgba(239, 68, 68, 0.8);
-          box-shadow: 0 0 30px rgba(239, 68, 68, 0.45);
-          animation: liveBigFlash 0.7s infinite;
-        }
-
-        @keyframes liveBigFlash {
-          0% {
-            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
-            filter: brightness(1);
-          }
-          50% {
-            box-shadow: 0 0 0 12px rgba(239, 68, 68, 0.2);
-            filter: brightness(1.15);
-          }
-          100% {
-            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
-            filter: brightness(1);
-          }
-        }
-
-        @keyframes livePulse {
-          0% {
-            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.65);
-          }
-          70% {
-            box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
-          }
-          100% {
-            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-          }
-        }
-
-        .card {
-          transition: transform 160ms ease, border-color 160ms ease,
-            box-shadow 160ms ease;
-        }
-        .card:hover {
-          transform: translateY(-3px);
-          border-color: rgba(103, 232, 249, 0.32);
-          box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
-        }
-
-        .walletPreview {
-          position: absolute;
-          right: 0;
-          top: calc(100% + 8px);
-          min-width: 220px;
-          max-width: 320px;
-          padding: 10px 12px;
-          border-radius: 12px;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          background: rgba(0, 0, 0, 0.7);
-          backdrop-filter: blur(10px);
-          box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-          opacity: 0;
-          transform: translateY(-4px);
-          pointer-events: none;
-          transition: opacity 160ms ease, transform 160ms ease;
-        }
-
-        .userMenu:hover .walletPreview {
-          opacity: 1;
-          transform: translateY(0);
-        }
-
         @media (max-width: 980px) {
           .marketLayout {
             grid-template-columns: 1fr !important;
           }
-        }
-
-        .streamOverlay {
-          position: fixed;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 80;
-          pointer-events: none;
-        }
-
-        .streamCard {
-          width: 280px;
-          height: 280px;
-          border-radius: 18px;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          background: rgba(8, 8, 8, 0.9);
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-          padding: 14px;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          position: relative;
-          pointer-events: auto;
-        }
-
-        .streamClose {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          width: 28px;
-          height: 28px;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          background: rgba(255, 255, 255, 0.08);
-          color: white;
-          font-size: 18px;
-          line-height: 1;
-          cursor: pointer;
-        }
-
-        .streamVideo {
-          flex: 1;
-          border-radius: 12px;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          background: radial-gradient(circle at 20% 20%, rgba(103, 232, 249, 0.2), transparent 50%),
-            radial-gradient(circle at 80% 80%, rgba(239, 68, 68, 0.25), transparent 50%),
-            rgba(255, 255, 255, 0.03);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: 700;
-          letter-spacing: 0.3px;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .streamVideo video {
-          position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          z-index: 1;
-          filter: saturate(1.05);
-        }
-
-        .streamBadge {
-          z-index: 2;
-          padding: 8px 12px;
-          border-radius: 999px;
-          background: rgba(0, 0, 0, 0.6);
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          font-size: 12px;
-        }
-
-        .streamGlow {
-          position: absolute;
-          inset: 0;
-          background: conic-gradient(from 180deg, rgba(103, 232, 249, 0.2), rgba(239, 68, 68, 0.2), rgba(103, 232, 249, 0.2));
-          animation: streamPulse 3s linear infinite;
-          opacity: 0.5;
-        }
-
-        @keyframes streamPulse {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
-        }
-
-        .streamCta {
-          border-radius: 12px;
-          border: 1px solid rgba(103, 232, 249, 0.4);
-          background: rgba(103, 232, 249, 0.15);
-          color: #67e8f9;
-          font-weight: 800;
-          padding: 10px 12px;
-          cursor: pointer;
-          text-align: center;
         }
       `}</style>
     </main>
@@ -769,35 +571,6 @@ export default function MarketplacePage() {
 }
 
 /* ======= UI helpers ======= */
-
-function TabBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        border: "none",
-        cursor: "pointer",
-        padding: "10px 12px",
-        borderRadius: 999,
-        fontWeight: 900,
-        fontSize: 13,
-        color: active ? "black" : "#e5e7eb",
-        background: active ? "#67e8f9" : "transparent",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
 
 function Chip({
   active,
@@ -812,16 +585,11 @@ function Chip({
     <button
       type="button"
       onClick={onClick}
-      style={{
-        cursor: "pointer",
-        border: "1px solid rgba(255,255,255,0.12)",
-        background: active ? "rgba(103,232,249,0.18)" : "rgba(255,255,255,0.03)",
-        color: active ? "#67e8f9" : "#e5e7eb",
-        padding: "8px 10px",
-        borderRadius: 999,
-        fontWeight: 900,
-        fontSize: 12,
-      }}
+      className={`cursor-pointer border px-2.5 py-2 rounded-full font-black text-xs transition-colors ${
+        active
+          ? "bg-cyan-400/20 border-cyan-400/30 text-cyan-400"
+          : "bg-white/[0.03] border-white/[0.12] text-gray-200 hover:bg-white/[0.06]"
+      }`}
     >
       {children}
     </button>
@@ -830,44 +598,9 @@ function Chip({
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        padding: "10px 12px",
-        borderRadius: 14,
-        border: "1px solid rgba(255,255,255,0.08)",
-        background: "rgba(0,0,0,0.25)",
-        color: "#e5e7eb",
-        fontSize: 13,
-      }}
-    >
-      <span style={{ color: "#9ca3af" }}>{label}</span>
-      <b style={{ color: "white" }}>{value}</b>
+    <div className="flex justify-between px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/25 text-[13px]">
+      <span className="text-gray-400">{label}</span>
+      <b className="text-white">{value}</b>
     </div>
-  );
-}
-
-function UserAvatarIcon() {
-  return (
-    <svg
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M12 12c2.761 0 5-2.239 5-5S14.761 2 12 2 7 4.239 7 7s2.239 5 5 5Z"
-        stroke="rgba(229,231,235,0.95)"
-        strokeWidth="1.8"
-      />
-      <path
-        d="M4 22c0-4.418 3.582-8 8-8s8 3.582 8 8"
-        stroke="rgba(229,231,235,0.95)"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }
