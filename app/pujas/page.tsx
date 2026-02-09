@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ethers } from "ethers";
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
 import Header from "../components/Header";
+import PhaseProgressBar from "../components/PhaseProgressBar";
 
 // ============ TYPES ============
 
@@ -281,6 +282,7 @@ function AuctionBidPageContent() {
 
   // Chain selection
   const [selectedChainId, setSelectedChainId] = useState<number>(84532);
+  const [hasManuallyChangedChain, setHasManuallyChangedChain] = useState(false);
   const chainConfig = CHAIN_DEPLOYMENTS[selectedChainId];
 
   const rpcUrl = useMemo(() => {
@@ -304,17 +306,21 @@ function AuctionBidPageContent() {
   const [encryptionKey, setEncryptionKey] = useState<string | null>(null);
   const [walletId, setWalletId] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState("");
+  const [walletBlockchain, setWalletBlockchain] = useState("");
 
   // Auction State
   const [auctionPhase, setAuctionPhase] = useState<number | null>(null);
   const [auctionLeader, setAuctionLeader] = useState("");
   const [auctionHighBid, setAuctionHighBid] = useState<bigint | null>(null);
   const [auctionFloorPrice, setAuctionFloorPrice] = useState<bigint | null>(null);
+  const [auctionParticipationFee, setAuctionParticipationFee] = useState<bigint | null>(null);
+  const [auctionMinIncrement, setAuctionMinIncrement] = useState<bigint | null>(null);
   const [auctionWinner, setAuctionWinner] = useState("");
   const [auctionFinalized, setAuctionFinalized] = useState<boolean | null>(null);
   const [auctionPaused, setAuctionPaused] = useState<boolean | null>(null);
   const [auctionTimeRemaining, setAuctionTimeRemaining] = useState<bigint | null>(null);
   const [auctionBidderCount, setAuctionBidderCount] = useState<number | null>(null);
+  const [hasPaidParticipationFee, setHasPaidParticipationFee] = useState(false);
 
   // User State
   const [userBid, setUserBid] = useState<bigint | null>(null);
@@ -324,6 +330,7 @@ function AuctionBidPageContent() {
   // UI State
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [bidInput, setBidInput] = useState("");
   const [bidError, setBidError] = useState<string | null>(null);
 
@@ -348,20 +355,56 @@ function AuctionBidPageContent() {
     setEncryptionKey(getSessionValue("w3s_encryption_key"));
     setWalletId(getSessionValue("w3s_wallet_id"));
     setWalletAddress(getSessionValue("w3s_wallet_address") ?? "");
+    setWalletBlockchain(getSessionValue("w3s_wallet_blockchain") ?? "");
   }, []);
 
   useEffect(() => {
     restoreSession();
   }, [restoreSession]);
 
+  // Auto-select chain based on wallet blockchain (only on initial load)
+  useEffect(() => {
+    if (walletBlockchain && !hasManuallyChangedChain) {
+      const blockchain = walletBlockchain.toUpperCase();
+      let matchedChainId: number | null = null;
+
+      if (blockchain.includes("ARC")) {
+        matchedChainId = 5042002;
+      } else if (blockchain.includes("BASE") && blockchain.includes("SEPOLIA")) {
+        matchedChainId = 84532;
+      } else if (blockchain.includes("BASE") && !blockchain.includes("SEPOLIA")) {
+        matchedChainId = 8453;
+      }
+
+      if (matchedChainId && matchedChainId !== selectedChainId) {
+        console.log(`Auto-selecting chain ${matchedChainId} to match wallet blockchain: ${walletBlockchain}`);
+        setSelectedChainId(matchedChainId);
+        pushToast({ 
+          type: "info", 
+          title: "Chain auto-selected", 
+          detail: `Switched to ${CHAIN_DEPLOYMENTS[matchedChainId].chainName} to match your wallet` 
+        });
+      }
+    }
+  }, [walletBlockchain, selectedChainId, hasManuallyChangedChain, pushToast]);
+
   useEffect(() => {
     const initSdk = () => {
       try {
-        const sdk = new W3SSdk({ appSettings: { appId } }, () => {});
+        const sdk = new W3SSdk(
+          { appSettings: { appId } },
+          (error, result) => {
+            // SDK callback for authentication events
+            if (error) {
+              console.error('SDK auth error:', error);
+            }
+          }
+        );
         sdkRef.current = sdk;
         setSdkReady(true);
-      } catch {
-        pushToast({ type: "error", title: "SDK init failed" });
+      } catch (error) {
+        console.error('SDK initialization failed:', error);
+        pushToast({ type: "error", title: "SDK init failed", detail: "Please refresh the page" });
       }
     };
     initSdk();
@@ -370,18 +413,40 @@ function AuctionBidPageContent() {
   // ============ EXECUTE CHALLENGE ============
 
   const executeChallenge = useCallback(
-    async (challengeId: string) => {
+    async (challengeId: string, timeout = 60000) => {
       const sdk = sdkRef.current;
-      if (!sdk || !sdkReady || !userToken || !encryptionKey) {
-        throw new Error("Session not ready");
+      if (!sdk || !sdkReady) {
+        throw new Error("SDK not initialized. Please refresh the page.");
       }
+      if (!userToken || !encryptionKey) {
+        throw new Error("Session expired. Please login again at /auth");
+      }
+
       sdk.setAuthentication({ userToken, encryptionKey });
-      return new Promise<{ transactionHash?: string }>((resolve, reject) => {
+
+      // Create the SDK execute promise
+      const executePromise = new Promise<{ transactionHash?: string }>((resolve, reject) => {
         sdk.execute(challengeId, (error, result) => {
-          if (error) reject(error);
-          else resolve(result as { transactionHash?: string });
+          if (error) {
+            const errorMsg = error && typeof error === 'object' && 'message' in error
+              ? String(error.message)
+              : 'Transaction cancelled or failed';
+            reject(new Error(errorMsg));
+          } else {
+            resolve(result as { transactionHash?: string });
+          }
         });
       });
+
+      // Create timeout promise
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error("Transaction timeout - please check your wallet or try again"));
+        }, timeout);
+      });
+
+      // Race between execute and timeout
+      return Promise.race([executePromise, timeoutPromise]);
     },
     [encryptionKey, sdkReady, userToken]
   );
@@ -391,14 +456,57 @@ function AuctionBidPageContent() {
   const runContractTx = useCallback(
     async (label: string, contractAddress: string, abi: string[], method: string, args: unknown[] = []) => {
       if (!userToken || !walletId || !walletAddress) {
-        pushToast({ type: "error", title: "Connect wallet first" });
+        pushToast({ type: "error", title: "Connect wallet first", detail: "Please sign in at /auth" });
         return null;
+      }
+
+      if (!encryptionKey) {
+        pushToast({ type: "error", title: "Session expired", detail: "Please sign in again at /auth" });
+        return null;
+      }
+
+      if (!sdkReady) {
+        pushToast({ type: "error", title: "SDK not ready", detail: "Please refresh the page" });
+        return null;
+      }
+
+      // Validate blockchain compatibility
+      if (walletBlockchain && !hasManuallyChangedChain) {
+        const blockchain = walletBlockchain.toUpperCase();
+        let matchedChainId: number | null = null;
+
+        if (blockchain.includes("ARC")) {
+          matchedChainId = 5042002;
+        } else if (blockchain.includes("BASE") && blockchain.includes("SEPOLIA")) {
+          matchedChainId = 84532;
+        } else if (blockchain.includes("BASE") && !blockchain.includes("SEPOLIA")) {
+          matchedChainId = 8453;
+        }
+
+        if (matchedChainId && matchedChainId !== selectedChainId) {
+          const walletChainName = CHAIN_DEPLOYMENTS[matchedChainId]?.chainName || walletBlockchain;
+          console.error(`Chain mismatch: Wallet is on ${walletChainName} (${matchedChainId}), but UI shows ${chainConfig.chainName} (${selectedChainId})`);
+          pushToast({
+            type: "error",
+            title: "Chain mismatch",
+            detail: `Wallet is on ${walletChainName}, switch to ${chainConfig.chainName} or select the correct chain above.`
+          });
+          return null;
+        }
       }
 
       setIsLoading(true);
       try {
+        // Encode the function call
         const iface = new ethers.Interface(abi);
         const callData = iface.encodeFunctionData(method, args);
+
+        console.log(`[${label}] Creating contract execution challenge...`, {
+          contractAddress,
+          method,
+          args,
+          callData: callData.slice(0, 66) + '...',
+        });
 
         const response = await fetch("/api/endpoints", {
           method: "POST",
@@ -409,20 +517,40 @@ function AuctionBidPageContent() {
             walletId,
             contractAddress,
             callData,
+            feeLevel: "MEDIUM",
           }),
         });
 
         const data = await response.json();
-        if (!response.ok) throw new Error(data?.error || "Failed to create challenge");
+
+        if (!response.ok) {
+          console.error(`[${label}] Challenge creation failed:`, data);
+          const errorMsg = data?.message || data?.error || data?.code || "Failed to create transaction";
+          throw new Error(errorMsg);
+        }
 
         const challengeId = data?.challengeId;
-        if (!challengeId) throw new Error("Invalid challenge");
+        if (!challengeId) {
+          console.error(`[${label}] Invalid challenge response:`, data);
+          throw new Error("Invalid challenge response from server");
+        }
 
-        pushToast({ type: "info", title: `${label} pending...` });
+        console.log(`[${label}] Challenge created:`, challengeId);
+        pushToast({ type: "info", title: `${label} pending...`, detail: "Approve in the Circle modal" });
+
         const result = await executeChallenge(challengeId);
-        pushToast({ type: "success", title: `${label} confirmed!` });
+
+        const txHash = result?.transactionHash;
+        console.log(`[${label}] Transaction result:`, result);
+
+        pushToast({
+          type: "success",
+          title: `${label} confirmed!`,
+          detail: txHash ? `Tx: ${txHash.slice(0, 10)}...` : undefined
+        });
         return result;
       } catch (error) {
+        console.error(`[${label}] Error:`, error);
         const msg = error instanceof Error ? error.message : "Transaction failed";
         pushToast({ type: "error", title: label, detail: msg });
         return null;
@@ -430,7 +558,7 @@ function AuctionBidPageContent() {
         setIsLoading(false);
       }
     },
-    [executeChallenge, pushToast, userToken, walletAddress, walletId]
+    [executeChallenge, pushToast, userToken, walletAddress, walletId, walletBlockchain, hasManuallyChangedChain, selectedChainId, chainConfig]
   );
 
   // Determine auction address (from URL param or default)
@@ -493,15 +621,17 @@ function AuctionBidPageContent() {
         setUserUsdcBalance(balance);
         setUserUsdcAllowance(allowance);
       }
+
+      // Update last refreshed timestamp
+      setLastRefreshed(new Date());
     } catch (error) {
       console.error("Failed to load auction data:", error);
     }
   }, [rpcProvider, chainConfig, walletAddress, auctionAddress]);
 
+  // Only fetch on mount - no auto-refresh to save RPC calls
   useEffect(() => {
     refreshData();
-    const interval = setInterval(refreshData, 10000); // Refresh every 10s
-    return () => clearInterval(interval);
   }, [refreshData]);
 
   // ============ APPROVE USDC ============
@@ -545,10 +675,21 @@ function AuctionBidPageContent() {
       return;
     }
 
-    // Check allowance
+    // Check and request allowance if needed
     if (userUsdcAllowance !== null && auctionParticipationFee > userUsdcAllowance) {
-      pushToast({ type: "error", title: "Please approve USDC first" });
-      return;
+      pushToast({ type: "info", title: "Approving USDC..." });
+      const approveResult = await runContractTx(
+        "Approve USDC",
+        chainConfig.usdc,
+        ERC20_ABI,
+        "approve",
+        [auctionAddress, auctionParticipationFee * BigInt(2)] // Approve 2x for future transactions
+      );
+      if (!approveResult) {
+        pushToast({ type: "error", title: "Approval failed" });
+        return;
+      }
+      await refreshData();
     }
 
     const result = await runContractTx(
@@ -690,7 +831,10 @@ function AuctionBidPageContent() {
           <select
             className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm"
             value={selectedChainId}
-            onChange={(e) => setSelectedChainId(Number(e.target.value))}
+            onChange={(e) => {
+              setSelectedChainId(Number(e.target.value));
+              setHasManuallyChangedChain(true);
+            }}
           >
             {Object.values(CHAIN_DEPLOYMENTS).map((c) => (
               <option key={c.chainId} value={c.chainId}>
@@ -708,18 +852,29 @@ function AuctionBidPageContent() {
             <div className={`rounded-3xl ${ui.card} p-6`}>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">Auction Status</h2>
-                <button
-                  onClick={refreshData}
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10"
-                >
-                  Refresh
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={refreshData}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10"
+                  >
+                    Refresh
+                  </button>
+                  {lastRefreshed && (
+                    <span className="text-xs text-white/40">
+                      {lastRefreshed.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className={`rounded-2xl ${ui.cardInner} p-4`}>
-                  <div className="text-xs text-white/50 mb-1">Current Phase</div>
-                  <div className="text-lg font-semibold text-cyan-400">{phaseLabel}</div>
+                <div className={`rounded-2xl ${ui.cardInner} p-4 sm:col-span-2 lg:col-span-3`}>
+                  <div className="text-xs text-white/50 mb-2">Current Phase</div>
+                  {auctionPhase !== null ? (
+                    <PhaseProgressBar phase={auctionPhase} variant="expanded" />
+                  ) : (
+                    <div className="text-lg font-semibold text-cyan-400">-</div>
+                  )}
                 </div>
 
                 <div className={`rounded-2xl ${ui.cardInner} p-4`}>
@@ -819,6 +974,19 @@ function AuctionBidPageContent() {
                 </div>
               ) : (
                 <>
+                  {/* Challenge Flow Info */}
+                  {hasSession && (
+                    <div className="mb-4 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-3">
+                      <div className="flex items-start gap-2 text-xs text-blue-300">
+                        <IconShield className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="font-semibold">Secure Transactions:</span> Each action will open a Circle modal for you to approve. 
+                          This ensures your wallet stays secure and you control every transaction.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Participation Fee Warning */}
                   {auctionParticipationFee !== null && auctionParticipationFee > BigInt(0) && !hasPaidParticipationFee && (
                     <div className="mb-4 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4">
@@ -919,17 +1087,35 @@ function AuctionBidPageContent() {
                           disabled={isLoading}
                           className="flex-1 group inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-semibold text-black transition hover:brightness-110 disabled:opacity-50"
                         >
-                          Approve USDC
+                          {isLoading ? (
+                            <>
+                              <div className="h-5 w-5 animate-spin rounded-full border-2 border-black/20 border-t-black"></div>
+                              <span>Approving...</span>
+                            </>
+                          ) : (
+                            <>
+                              <IconShield className="h-5 w-5" />
+                              <span>Approve USDC</span>
+                            </>
+                          )}
                         </button>
                       ) : (
                         <button
                           onClick={handlePlaceBid}
-                          disabled={isLoading || !bidAmountParsed}
+                          disabled={isLoading || !bidAmountParsed || (auctionParticipationFee !== null && auctionParticipationFee > BigInt(0) && !hasPaidParticipationFee)}
                           className="flex-1 group inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-5 py-3 font-semibold text-black transition hover:brightness-110 disabled:opacity-50"
                         >
-                          <IconGavel className="h-5 w-5" />
-                          Place Bid
-                          <IconArrowUpRight className="h-5 w-5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                          {isLoading ? (
+                            <>
+                              <div className="h-5 w-5 animate-spin rounded-full border-2 border-black/20 border-t-black"></div>
+                              <span>Processing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <IconGavel className="h-5 w-5" />
+                              <span>Place Bid</span>
+                            </>
+                          )}
                         </button>
                       )}
 

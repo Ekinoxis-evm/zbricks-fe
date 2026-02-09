@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
 import Header from "../components/Header";
+import PhaseProgressBar from "../components/PhaseProgressBar";
 
 // ============ CONSTANTS ============
 
@@ -390,7 +391,7 @@ export default function MarketplacePage() {
             </div>
           </div>
 
-          {/* Grid layout: Sidebar + Marketplace */}
+          {/* Grid layout: Sidebar + Auctions */}
           <div className="grid grid-cols-[280px_1fr] gap-4 marketLayout">
             {/* Sidebar */}
             <aside className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 h-fit">
@@ -424,7 +425,7 @@ export default function MarketplacePage() {
               </div>
             </aside>
 
-            {/* Marketplace grid */}
+            {/* Auctions grid */}
             <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
               {filtered.map((auction, idx) => {
                 const isActive = !auction.finalized && !auction.paused;
@@ -498,6 +499,11 @@ export default function MarketplacePage() {
                           <div className="flex-1 px-2 py-1.5 rounded-lg border border-white/[0.08] bg-black/25 text-center truncate">
                             Leader: <span className="text-cyan-400">{shortAddr(auction.currentLeader)}</span>
                           </div>
+                        </div>
+
+                        {/* Phase Progress */}
+                        <div className="mt-3">
+                          <PhaseProgressBar phase={auction.currentPhase} variant="compact" />
                         </div>
 
                         {/* Action */}

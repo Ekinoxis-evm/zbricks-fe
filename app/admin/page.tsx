@@ -1,1044 +1,1397 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ethers } from "ethers";
+import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
+import Header from "../components/Header";
+import PhaseProgressBar from "../components/PhaseProgressBar";
+import PhaseMetadataBuilder from "../components/PhaseMetadataBuilder";
 
-/**
- * Admin Reveal Builder (Responsive + compact)
- * - 4 fases: momento0..momento3
- * - Base JSON: metadata completo
- * - Asignas traits/media por fase (toggle + drag & drop)
- * - Editas value de cada trait por fase (overrides)
- * - Exportas JSON por fase o bundle
- *
- * Cambios solicitados:
- * - Se elimina display_type del UI
- * - Se elimina display_type del JSON exportado (incluye "Reveal Phase")
- * - Layout ajustado a pantalla: compacto + scroll en paneles
- */
+// ============ CONSTANTS ============
 
-type Trait = {
-  trait_type: string;
-  value: string | number;
-  // mantenemos opcional internamente, pero NO lo mostramos ni lo exportamos
-  display_type?: string;
+const DEFAULT_RPC_BY_CHAIN: Record<number, string> = {
+  84532: "https://sepolia.base.org",
+  8453: "https://mainnet.base.org",
+  5042002: "https://rpc.testnet.arc.network",
 };
 
-type Media = Record<string, any>;
-
-type AuctionMeta = {
-  name: string;
-  description: string;
-  image: string;
-  external_url?: string;
-  animation_url?: string;
-  attributes: Trait[];
-  media: Media;
-  properties: any;
-};
-
-type PhaseKey = "momento0" | "momento1" | "momento2" | "momento3";
-
-type TraitDraft = {
-  trait_type: string;
-  value: string | number;
-};
-
-type PhaseConfig = {
-  title: string;
-  revealPhaseNumber: number; // 0..3
-  traits: string[]; // list of trait_type
-  mediaKeys: string[]; // keys of meta.media
-  overrides?: Partial<Pick<AuctionMeta, "name" | "description" | "image" | "animation_url">>;
-
-  // overrides por trait (solo value)
-  traitOverrides?: Record<string, TraitDraft>;
-};
-
-const STORAGE_KEY = "admin_reveal_builder_v3_compact";
-
-const BASE_META: AuctionMeta = {
-  name: "Luxury Villa #1 - Complete Property",
-  description:
-    "Progressive auction complete: All property details, legal documentation, and warranties revealed. Ready for finalization.",
-  image: "ipfs://QmPhase3/complete-hero.jpg",
-  external_url: "https://yourauction.com/villa-1",
-  animation_url: "ipfs://QmPhase3/complete-tour.mp4",
-
-  attributes: [
-    { trait_type: "Reveal Phase", value: 3, display_type: "number" },
-    { trait_type: "Revealed", value: "100%" },
-    { trait_type: "Status", value: "Sold" },
-    { trait_type: "Country", value: "Colombia" },
-    { trait_type: "State", value: "Valle del Cauca" },
-    { trait_type: "City", value: "Cali" },
-    { trait_type: "Neighborhood", value: "Normandia" },
-    { trait_type: "Zone", value: "Residential" },
-    { trait_type: "Lot Size", value: "1,000 m²", display_type: "number" },
-    { trait_type: "Orientation", value: "North-facing" },
-    { trait_type: "Topography", value: "Flat" },
-    { trait_type: "View", value: "Mountain view" },
-    { trait_type: "Address", value: "Calle 10 #23-45" },
-    { trait_type: "Total Living Area", value: "450 m²", display_type: "number" },
-    { trait_type: "Levels", value: 3, display_type: "number" },
-    { trait_type: "Bedrooms", value: 5, display_type: "number" },
-    { trait_type: "Bathrooms", value: 6, display_type: "number" },
-    { trait_type: "Half Baths", value: 2, display_type: "number" },
-    { trait_type: "Kitchen Type", value: "Open Concept" },
-    { trait_type: "Living Rooms", value: 2, display_type: "number" },
-    { trait_type: "Dining Areas", value: 1, display_type: "number" },
-    { trait_type: "Balconies", value: 3, display_type: "number" },
-    { trait_type: "Study/Office", value: "Yes" },
-    { trait_type: "Pool Type", value: "Infinity" },
-    { trait_type: "Pool Size", value: "60 m²", display_type: "number" },
-    { trait_type: "Gym", value: "Private Equipped" },
-    { trait_type: "Parking", value: "4 Cars", display_type: "number" },
-    { trait_type: "Cinema", value: "Private Theater" },
-    { trait_type: "Wine Cellar", value: "Climate Controlled" },
-    { trait_type: "BBQ Area", value: "Covered Outdoor" },
-    { trait_type: "Garden", value: "Landscaped" },
-    { trait_type: "Social Area", value: "Terrace + Lounge" },
-    { trait_type: "Smart Home", value: "Full Automation" },
-    { trait_type: "Security System", value: "24/7 Monitoring" },
-    { trait_type: "Solar Panels", value: "Yes" },
-    { trait_type: "Water Treatment", value: "Filtration System" },
-    { trait_type: "Year Built", value: 2023, display_type: "number" },
-    { trait_type: "Property ID", value: "COL-VDC-CALI-001" },
-    { trait_type: "Legal Status", value: "Clear Title" },
-    { trait_type: "Zoning", value: "Residential - R1" },
-    { trait_type: "Property Tax/Year", value: "12,000,000 COP" },
-    { trait_type: "HOA Fees/Month", value: "500,000 COP" },
-    { trait_type: "Warranty", value: "10 Years Structural" },
-    { trait_type: "Utilities", value: "All Connected" },
-    { trait_type: "Internet", value: "Fiber 1Gbps" },
-    { trait_type: "Energy Rating", value: "A+" },
-    { trait_type: "Nearby Parks", value: "3 within 1km" },
-    { trait_type: "Schools", value: "International School 2km" },
-    { trait_type: "Shopping", value: "Mall 1.5km" },
-  ],
-
-  media: {
-    neighborhood_map: "ipfs://QmPhase0/map.png",
-    lot_plan: "ipfs://QmPhase0/lot-plan.pdf",
-    drone_video: "ipfs://QmPhase0/drone.mp4",
-    floor_plans: "ipfs://QmPhase1/floor-plans.pdf",
-    interior_images: [
-      "ipfs://QmPhase1/living-room.jpg",
-      "ipfs://QmPhase1/kitchen.jpg",
-      "ipfs://QmPhase1/master-bedroom.jpg",
-      "ipfs://QmPhase1/bathroom.jpg",
-    ],
-    "3d_walkthrough": "ipfs://QmPhase1/walkthrough.mp4",
-    amenity_images: [
-      "ipfs://QmPhase2/pool.jpg",
-      "ipfs://QmPhase2/gym.jpg",
-      "ipfs://QmPhase2/cinema.jpg",
-      "ipfs://QmPhase2/wine-cellar.jpg",
-      "ipfs://QmPhase2/bbq-area.jpg",
-    ],
-    smart_home_demo: "ipfs://QmPhase2/automation.mp4",
-    legal_documents: "ipfs://QmPhase2/legal-docs.pdf",
-    property_deed: "ipfs://QmPhase2/deed.pdf",
-    warranties: "ipfs://QmPhase2/warranties.pdf",
-    certificates: "ipfs://QmPhase2/certificates.pdf",
-    complete_photo_gallery: "ipfs://QmPhase2/gallery/",
-    virtual_tour_360: "ipfs://QmPhase2/tour360.html",
-  },
-
-  properties: {
-    auction: {
-      phase: 3,
-      bidding_open: false,
-      auction_finalized: true,
-      floor_price: 500000,
-      highest_bid: 550000,
-      bidder_lead: "0x1234...abcd",
-    },
-    revealed: {
-      location: true,
-      lot_details: true,
-      interior_layout: true,
-      amenities: true,
-      legal_docs: true,
-    },
-    final_details: {
-      ready_for_transfer: true,
-      escrow_ready: true,
-      inspections_complete: true,
-      owner: "0x5678",
-      final_price: 550000,
-      sold_on: "2026-02-15T12:00:00Z",
-    },
-  },
-};
-
-const DEFAULT_PHASES: Record<PhaseKey, PhaseConfig> = {
-  momento0: {
-    title: "Momento 0",
-    revealPhaseNumber: 0,
-    traits: ["Country", "State", "City", "Neighborhood", "Zone", "View"],
-    mediaKeys: ["neighborhood_map", "lot_plan", "drone_video"],
-    overrides: {
-      name: "Luxury Villa #1 — Preview",
-      description: "Inicio de subasta: ubicación general + teaser visual. Lo demás está bloqueado (todavía).",
-      image: "ipfs://QmPhase0/teaser-hero.jpg",
-      animation_url: "ipfs://QmPhase0/teaser.mp4",
-    },
-  },
-  momento1: {
-    title: "Momento 1",
-    revealPhaseNumber: 1,
-    traits: [
-      "Lot Size",
-      "Orientation",
-      "Topography",
-      "Total Living Area",
-      "Levels",
-      "Bedrooms",
-      "Bathrooms",
-      "Half Baths",
-      "Kitchen Type",
-      "Living Rooms",
-      "Dining Areas",
-      "Balconies",
-      "Study/Office",
-      "Parking",
-    ],
-    mediaKeys: ["floor_plans", "interior_images", "3d_walkthrough"],
-    overrides: {
-      name: "Luxury Villa #1 — Layout Reveal",
-      description: "Se revela distribución, metraje y primeros interiores. Ya huele a mansión, pero falta la magia.",
-      image: "ipfs://QmPhase1/layout-hero.jpg",
-      animation_url: "ipfs://QmPhase1/walkthrough.mp4",
-    },
-  },
-  momento2: {
-    title: "Momento 2",
-    revealPhaseNumber: 2,
-    traits: [
-      "Pool Type",
-      "Pool Size",
-      "Gym",
-      "Cinema",
-      "Wine Cellar",
-      "BBQ Area",
-      "Garden",
-      "Social Area",
-      "Smart Home",
-      "Security System",
-      "Solar Panels",
-      "Water Treatment",
-      "Utilities",
-      "Internet",
-      "Energy Rating",
-      "Nearby Parks",
-      "Schools",
-      "Shopping",
-    ],
-    mediaKeys: ["amenity_images", "smart_home_demo", "complete_photo_gallery", "virtual_tour_360"],
-    overrides: {
-      name: "Luxury Villa #1 — Amenities Reveal",
-      description: "Se desbloquean zonas comunes, automatización y tour 360. Ya esto es “final boss”.",
-      image: "ipfs://QmPhase2/amenities-hero.jpg",
-      animation_url: "ipfs://QmPhase2/automation.mp4",
-    },
-  },
-  momento3: {
-    title: "Momento 3",
-    revealPhaseNumber: 3,
-    traits: [
-      "Reveal Phase",
-      "Revealed",
-      "Status",
-      "Address",
-      "Year Built",
-      "Property ID",
-      "Legal Status",
-      "Zoning",
-      "Property Tax/Year",
-      "HOA Fees/Month",
-      "Warranty",
-    ],
-    mediaKeys: ["legal_documents", "property_deed", "warranties", "certificates"],
-    overrides: {
-      name: "Luxury Villa #1 - Complete Property",
-      description: "Subasta finalizada: documentación legal y garantías reveladas. Listo para transferencia.",
-      image: "ipfs://QmPhase3/complete-hero.jpg",
-      animation_url: "ipfs://QmPhase3/complete-tour.mp4",
-    },
-  },
-};
-
-function clsx(...xs: Array<string | false | null | undefined>) {
-  return xs.filter(Boolean).join(" ");
-}
-
-function safeJsonParse<T>(s: string): T | null {
-  try {
-    return JSON.parse(s) as T;
-  } catch {
-    return null;
+const CHAIN_DEPLOYMENTS: Record<
+  number,
+  {
+    chainId: number;
+    chainName: string;
+    explorer: string;
+    contracts: {
+      HouseNFT: string;
+      AuctionFactory: string;
+      AuctionManager: string;
+    };
+    usdc: string;
   }
-}
+> = {
+  8453: {
+    chainId: 8453,
+    chainName: "Base Mainnet",
+    explorer: "https://base.blockscout.com",
+    contracts: {
+      HouseNFT: "0x44b659c474d1bcb0e6325ae17c882994d772e471",
+      AuctionFactory: "0x1d5854ef9b5fd15e1f477a7d15c94ea0e795d9a5",
+      AuctionManager: "0x24220aeb9360aaf896c99060c53332258736e30d",
+    },
+    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  },
+  84532: {
+    chainId: 84532,
+    chainName: "Base Sepolia",
+    explorer: "https://base-sepolia.blockscout.com",
+    contracts: {
+      HouseNFT: "0x3911826c047726de1881f5518faa06e06413aba6",
+      AuctionFactory: "0xd13e24354d6e9706b4bc89272e31374ec71a2e75",
+      AuctionManager: "0x4aee0c5afe353fb9fa111e0b5221db715b53cb10",
+    },
+    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  },
+  5042002: {
+    chainId: 5042002,
+    chainName: "Arc Testnet",
+    explorer: "https://testnet.arcscan.app",
+    contracts: {
+      HouseNFT: "0x6bb77d0b235d4d27f75ae0e3a4f465bf8ac91c0b",
+      AuctionFactory: "0x88cc60b8a6161758b176563c78abeb7495d664d1",
+      AuctionManager: "0x2fbaed3a30a53bd61676d9c5f46db5a73f710f53",
+    },
+    usdc: "0x3600000000000000000000000000000000000000",
+  },
+};
 
-function downloadJson(filename: string, data: any) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+// ============ ABIs ============
 
-function uniq(xs: string[]) {
-  return Array.from(new Set(xs));
-}
+const HOUSE_NFT_ABI = [
+  "function admin() view returns (address)",
+  "function nextTokenId() view returns (uint256)",
+  "function tokenPhase(uint256) view returns (uint8)",
+  "function tokenController(uint256) view returns (address)",
+  "function ownerOf(uint256) view returns (address)",
+  "function tokenURI(uint256) view returns (string)",
+  "function getPhaseURI(uint256,uint8) view returns (string)",
+  "function mintTo(address) returns (uint256)",
+  "function setController(uint256,address)",
+  "function setPhaseURIs(uint256,string[4])",
+  "function updatePhaseURI(uint256,uint8,string)",
+  "function advancePhase(uint256)",
+  "function transferAdmin(address)",
+  "function safeTransferFrom(address,address,uint256)",
+];
 
-// Elimina display_type SIEMPRE en export
-function stripDisplayType(attr: Trait): { trait_type: string; value: string | number } {
-  return { trait_type: attr.trait_type, value: attr.value };
-}
+const FACTORY_ABI = [
+  "function owner() view returns (address)",
+  "function getAuctions() view returns (address[])",
+  "function getAuctionCount() view returns (uint256)",
+  "function createAuction(address,address,address,uint256,uint256[4],uint256,uint256,bool,uint256,address) returns (address)",
+];
 
-export default function AdminRevealPage() {
-  const [meta, setMeta] = useState<AuctionMeta>(BASE_META);
-  const [phases, setPhases] = useState<Record<PhaseKey, PhaseConfig>>(DEFAULT_PHASES);
-  const [activePhase, setActivePhase] = useState<PhaseKey>("momento0");
-  const [search, setSearch] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState("");
-  const [uploadResult, setUploadResult] = useState<{
-    cid: string;
-    ipfsUrl: string;
-    gatewayUrl: string;
-    name: string;
-  } | null>(null);
+const AUCTION_ABI = [
+  "function owner() view returns (address)",
+  "function paymentToken() view returns (address)",
+  "function nftContract() view returns (address)",
+  "function tokenId() view returns (uint256)",
+  "function floorPrice() view returns (uint256)",
+  "function participationFee() view returns (uint256)",
+  "function minBidIncrement() view returns (uint256)",
+  "function currentPhase() view returns (uint8)",
+  "function currentLeader() view returns (address)",
+  "function currentHighBid() view returns (uint256)",
+  "function winner() view returns (address)",
+  "function finalized() view returns (bool)",
+  "function paused() view returns (bool)",
+  "function userBids(address) view returns (uint256)",
+  "function getTimeRemaining() view returns (uint256)",
+  "function getBidderCount() view returns (uint256)",
+  "function advancePhase()",
+  "function finalizeAuction()",
+  "function withdrawProceeds()",
+  "function emergencyWithdrawNFT(address)",
+  "function pause()",
+  "function unpause()",
+];
 
-  // Load localStorage
-  useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const parsed = safeJsonParse<{ meta: AuctionMeta; phases: Record<PhaseKey, PhaseConfig> }>(raw);
-    if (parsed?.meta && parsed?.phases) {
-      setMeta(parsed.meta);
-      setPhases(parsed.phases);
-    }
+const ERC20_ABI = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address,address) view returns (uint256)",
+  "function approve(address,uint256)",
+];
+
+// ============ TYPES ============
+
+type Tab = "nft" | "launch" | "manage";
+
+type Toast = {
+  id: string;
+  type: "info" | "success" | "error";
+  title: string;
+  detail?: string;
+};
+
+type CircleWallet = {
+  id: string;
+  address: string;
+  blockchain: string;
+};
+
+// ============ HELPERS ============
+
+const shorten = (addr: string) => (addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "-");
+const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
+
+const getSessionValue = (key: string) => {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem(key) || window.localStorage.getItem(key);
+};
+
+// ============ COMPONENT ============
+
+export default function AdminPage() {
+  const [selectedChainId, setSelectedChainId] = useState<number>(84532);
+  const [hasManuallyChangedChain, setHasManuallyChangedChain] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("nft");
+
+  const chainConfig = CHAIN_DEPLOYMENTS[selectedChainId];
+  const rpcUrl = useMemo(() => {
+    const envKey = {
+      84532: process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL,
+      8453: process.env.NEXT_PUBLIC_BASE_MAINNET_RPC_URL,
+      5042002: process.env.NEXT_PUBLIC_ARC_TESTNET_RPC_URL,
+    }[selectedChainId];
+    return envKey ?? DEFAULT_RPC_BY_CHAIN[selectedChainId];
+  }, [selectedChainId]);
+
+  const rpcProvider = useMemo(
+    () => (rpcUrl ? new ethers.JsonRpcProvider(rpcUrl) : null),
+    [rpcUrl]
+  );
+
+  // SDK & Session
+  const sdkRef = useRef<W3SSdk | null>(null);
+  const [sdkReady, setSdkReady] = useState(false);
+  const [userToken, setUserToken] = useState<string | null>(null);
+  const [encryptionKey, setEncryptionKey] = useState<string | null>(null);
+  const [walletId, setWalletId] = useState<string | null>(null);
+  const [walletAddress, setWalletAddress] = useState("");
+  const [walletBlockchain, setWalletBlockchain] = useState("");
+
+  // UI
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+
+  // NFT State
+  const [nftAdmin, setNftAdmin] = useState("");
+  const [nftNextTokenId, setNftNextTokenId] = useState<bigint | null>(null);
+  const [nftTokenId, setNftTokenId] = useState("1");
+  const [nftTokenPhase, setNftTokenPhase] = useState<number | null>(null);
+  const [nftTokenController, setNftTokenController] = useState("");
+  const [nftTokenOwner, setNftTokenOwner] = useState("");
+  const [nftTokenUri, setNftTokenUri] = useState("");
+
+  // NFT Actions
+  const [mintRecipient, setMintRecipient] = useState("");
+  const [setControllerAddr, setSetControllerAddr] = useState("");
+  const [phaseUris, setPhaseUris] = useState(["", "", "", ""]);
+  const [singlePhaseIdx, setSinglePhaseIdx] = useState("0");
+  const [singlePhaseUri, setSinglePhaseUri] = useState("");
+  const [transferAdminAddr, setTransferAdminAddr] = useState("");
+  const [showBuilder, setShowBuilder] = useState<number | null>(null);
+
+  // Factory State
+  const [factoryOwner, setFactoryOwner] = useState("");
+  const [auctionsList, setAuctionsList] = useState<string[]>([]);
+
+  // Launch Auction
+  const [launchNftContract, setLaunchNftContract] = useState("");
+  const [launchTokenId, setLaunchTokenId] = useState("1");
+  const [launchPaymentToken, setLaunchPaymentToken] = useState("");
+  const [launchPhaseDurations, setLaunchPhaseDurations] = useState(["86400", "86400", "86400", "0"]);
+  const [launchFloorPrice, setLaunchFloorPrice] = useState("100");
+  const [launchMinIncrement, setLaunchMinIncrement] = useState("5");
+  const [launchEnforceIncrement, setLaunchEnforceIncrement] = useState(true);
+  const [launchParticipationFee, setLaunchParticipationFee] = useState("0");
+  const [launchTreasury, setLaunchTreasury] = useState("");
+
+  // Manage Auction State
+  const [selectedAuction, setSelectedAuction] = useState("");
+  const [auctionOwner, setAuctionOwner] = useState("");
+  const [auctionPhase, setAuctionPhase] = useState<number | null>(null);
+  const [auctionLeader, setAuctionLeader] = useState("");
+  const [auctionHighBid, setAuctionHighBid] = useState<bigint | null>(null);
+  const [auctionFloorPrice, setAuctionFloorPrice] = useState<bigint | null>(null);
+  const [auctionParticipationFee, setAuctionParticipationFee] = useState<bigint | null>(null);
+  const [auctionMinIncrement, setAuctionMinIncrement] = useState<bigint | null>(null);
+  const [auctionWinner, setAuctionWinner] = useState("");
+  const [auctionFinalized, setAuctionFinalized] = useState<boolean | null>(null);
+  const [auctionPaused, setAuctionPaused] = useState<boolean | null>(null);
+  const [auctionTimeRemaining, setAuctionTimeRemaining] = useState<bigint | null>(null);
+  const [auctionBidderCount, setAuctionBidderCount] = useState<number | null>(null);
+  const [emergencyWithdrawTo, setEmergencyWithdrawTo] = useState("");
+
+  const hasSession = Boolean(userToken && encryptionKey);
+  const isNftAdmin = hasSession && nftAdmin && walletAddress.toLowerCase() === nftAdmin.toLowerCase();
+  const isFactoryOwner = hasSession && factoryOwner && walletAddress.toLowerCase() === factoryOwner.toLowerCase();
+  const isAuctionOwner = hasSession && auctionOwner && walletAddress.toLowerCase() === auctionOwner.toLowerCase();
+
+  // ============ TOAST ============
+
+  const pushToast = useCallback((toast: Omit<Toast, "id">) => {
+    const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    setToasts((prev) => [...prev, { ...toast, id }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
   }, []);
 
-  // Save localStorage
+  // ============ SESSION ============
+
+  const restoreSession = useCallback(() => {
+    setUserToken(getSessionValue("w3s_user_token"));
+    setEncryptionKey(getSessionValue("w3s_encryption_key"));
+    setWalletId(getSessionValue("w3s_wallet_id"));
+    setWalletAddress(getSessionValue("w3s_wallet_address") ?? "");
+    setWalletBlockchain(getSessionValue("w3s_wallet_blockchain") ?? "");
+  }, []);
+
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ meta, phases }));
-  }, [meta, phases]);
+    restoreSession();
+  }, [restoreSession]);
 
-  const allTraitTypes = useMemo(() => {
-    const types = meta.attributes.map((a) => a.trait_type);
-    return uniq(types).sort((a, b) => a.localeCompare(b));
-  }, [meta.attributes]);
+  // Auto-select chain based on wallet blockchain (only on initial load)
+  useEffect(() => {
+    if (walletBlockchain && !hasManuallyChangedChain) {
+      const blockchain = walletBlockchain.toUpperCase();
+      let matchedChainId: number | null = null;
 
-  const mediaKeys = useMemo(() => {
-    return Object.keys(meta.media || {}).sort((a, b) => a.localeCompare(b));
-  }, [meta.media]);
-
-  const filteredTraits = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return allTraitTypes;
-    return allTraitTypes.filter((t) => t.toLowerCase().includes(q));
-  }, [allTraitTypes, search]);
-
-  const filteredMediaKeys = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return mediaKeys;
-    return mediaKeys.filter((k) => k.toLowerCase().includes(q));
-  }, [mediaKeys, search]);
-
-  const phase = phases[activePhase];
-
-  function toggleTrait(traitType: string) {
-    setPhases((p) => {
-      const cur = p[activePhase];
-      const has = cur.traits.includes(traitType);
-      const nextTraits = has ? cur.traits.filter((x) => x !== traitType) : [...cur.traits, traitType];
-
-      const nextOverrides = { ...(cur.traitOverrides || {}) };
-      if (has) delete nextOverrides[traitType];
-
-      return {
-        ...p,
-        [activePhase]: {
-          ...cur,
-          traits: uniq(nextTraits),
-          traitOverrides: Object.keys(nextOverrides).length ? nextOverrides : undefined,
-        },
-      };
-    });
-  }
-
-  function toggleMediaKey(key: string) {
-    setPhases((p) => {
-      const cur = p[activePhase];
-      const has = cur.mediaKeys.includes(key);
-      const nextKeys = has ? cur.mediaKeys.filter((x) => x !== key) : [...cur.mediaKeys, key];
-      return { ...p, [activePhase]: { ...cur, mediaKeys: uniq(nextKeys) } };
-    });
-  }
-
-  function onDragStart(e: React.DragEvent, payload: any) {
-    e.dataTransfer.setData("application/json", JSON.stringify(payload));
-    e.dataTransfer.effectAllowed = "copy";
-  }
-
-  function onDropToPhase(e: React.DragEvent) {
-    e.preventDefault();
-    const raw = e.dataTransfer.getData("application/json");
-    const payload = safeJsonParse<{ kind: "trait" | "media"; value: string }>(raw);
-    if (!payload) return;
-    if (payload.kind === "trait") toggleTrait(payload.value);
-    if (payload.kind === "media") toggleMediaKey(payload.value);
-  }
-
-  function allowDrop(e: React.DragEvent) {
-    e.preventDefault();
-  }
-
-  // ----- Trait editing (per phase) -----
-  function getBaseTrait(traitType: string): Trait | undefined {
-    return meta.attributes.find((a) => a.trait_type === traitType);
-  }
-
-  function getEffectiveTrait(traitType: string): TraitDraft | null {
-    const base = getBaseTrait(traitType);
-    if (!base) return null;
-    const ov = phases[activePhase].traitOverrides?.[traitType];
-    return {
-      trait_type: traitType,
-      value: ov?.value ?? base.value,
-    };
-  }
-
-  function setTraitOverride(traitType: string, value: string | number) {
-    setPhases((p) => {
-      const cur = p[activePhase];
-      const base = meta.attributes.find((a) => a.trait_type === traitType);
-      if (!base) return p;
-
-      const next: TraitDraft = { trait_type: traitType, value };
-
-      return {
-        ...p,
-        [activePhase]: {
-          ...cur,
-          traitOverrides: {
-            ...(cur.traitOverrides || {}),
-            [traitType]: next,
-          },
-        },
-      };
-    });
-  }
-
-  function clearTraitOverride(traitType: string) {
-    setPhases((p) => {
-      const cur = p[activePhase];
-      const map = { ...(cur.traitOverrides || {}) };
-      delete map[traitType];
-      return {
-        ...p,
-        [activePhase]: {
-          ...cur,
-          traitOverrides: Object.keys(map).length ? map : undefined,
-        },
-      };
-    });
-  }
-
-  function buildPhaseMetadata(key: PhaseKey): AuctionMeta {
-    const cfg = phases[key];
-
-    // Reveal Phase SIEMPRE (sin display_type en export)
-    const revealPhaseTrait: Trait = {
-      trait_type: "Reveal Phase",
-      value: cfg.revealPhaseNumber,
-    };
-
-    const attributesFiltered: Trait[] = meta.attributes
-      .filter((a) => cfg.traits.includes(a.trait_type))
-      .filter((a) => a.trait_type !== "Reveal Phase")
-      .map((a) => {
-        const ov = cfg.traitOverrides?.[a.trait_type];
-        if (!ov) return { trait_type: a.trait_type, value: a.value }; // strip display_type
-        return { trait_type: a.trait_type, value: ov.value }; // strip display_type
-      });
-
-    const attributes = [revealPhaseTrait, ...attributesFiltered].map(stripDisplayType);
-
-    const media: Media = {};
-    for (const k of cfg.mediaKeys) media[k] = meta.media?.[k];
-
-    const revealedLocation = !!cfg.traits.some((t) =>
-      ["Country", "State", "City", "Neighborhood", "Zone", "Address"].includes(t)
-    );
-    const revealedLot = !!cfg.traits.some((t) => ["Lot Size", "Orientation", "Topography"].includes(t));
-    const revealedInterior = !!cfg.mediaKeys.some((k) =>
-      ["floor_plans", "interior_images", "3d_walkthrough"].includes(k)
-    );
-    const revealedAmenities = !!cfg.mediaKeys.some((k) =>
-      ["amenity_images", "smart_home_demo", "virtual_tour_360"].includes(k)
-    );
-    const revealedLegal = !!cfg.mediaKeys.some((k) =>
-      ["legal_documents", "property_deed", "warranties", "certificates"].includes(k)
-    );
-
-    return {
-      ...meta,
-      ...cfg.overrides,
-      // ⚠️ aquí ya viene sin display_type
-      attributes: attributes as any,
-      media,
-      properties: {
-        ...meta.properties,
-        auction: {
-          ...(meta.properties?.auction || {}),
-          phase: cfg.revealPhaseNumber,
-        },
-        revealed: {
-          ...(meta.properties?.revealed || {}),
-          location: revealedLocation,
-          lot_details: revealedLot,
-          interior_layout: revealedInterior,
-          amenities: revealedAmenities,
-          legal_docs: revealedLegal,
-        },
-      },
-    };
-  }
-
-  const activePreview = useMemo(() => buildPhaseMetadata(activePhase), [activePhase, phases, meta]);
-
-  // Altura usable para paneles con scroll (evita que se “estire feo”)
-  const panelHeight = "h-[calc(100vh-170px)]";
-
-  async function uploadJsonToIpfs(name: string, content: any) {
-    setUploading(true);
-    setUploadError("");
-    try {
-      const response = await fetch("/api/pinata", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          content,
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        const msg = data?.error || data?.message || "No se pudo subir a IPFS.";
-        setUploadError(msg);
-        return;
+      if (blockchain.includes("ARC")) {
+        matchedChainId = 5042002;
+      } else if (blockchain.includes("BASE") && blockchain.includes("SEPOLIA")) {
+        matchedChainId = 84532;
+      } else if (blockchain.includes("BASE") && !blockchain.includes("SEPOLIA")) {
+        matchedChainId = 8453;
       }
 
-      setUploadResult({
-        cid: data.cid,
-        ipfsUrl: data.ipfsUrl,
-        gatewayUrl: data.gatewayUrl,
-        name,
-      });
-    } catch (error: any) {
-      setUploadError(error?.message || "No se pudo subir a IPFS.");
-    } finally {
-      setUploading(false);
+      if (matchedChainId && matchedChainId !== selectedChainId) {
+        console.log(`Auto-selecting chain ${matchedChainId} to match wallet blockchain: ${walletBlockchain}`);
+        setSelectedChainId(matchedChainId);
+        pushToast({ 
+          type: "info", 
+          title: "Chain auto-selected", 
+          detail: `Switched to ${CHAIN_DEPLOYMENTS[matchedChainId].chainName} to match your wallet` 
+        });
+      }
     }
-  }
+  }, [walletBlockchain, selectedChainId, hasManuallyChangedChain, pushToast]);
+
+  useEffect(() => {
+    const initSdk = () => {
+      try {
+        const sdk = new W3SSdk(
+          { appSettings: { appId } },
+          (error, result) => {
+            // SDK callback for authentication events
+            if (error) {
+              console.error('SDK auth error:', error);
+            }
+          }
+        );
+        sdkRef.current = sdk;
+        setSdkReady(true);
+      } catch (error) {
+        console.error('SDK initialization failed:', error);
+        pushToast({ type: "error", title: "SDK init failed", detail: "Please refresh the page" });
+      }
+    };
+    initSdk();
+  }, [pushToast]);
+
+  // ============ EXECUTE CHALLENGE ============
+
+  const executeChallenge = useCallback(
+    async (challengeId: string, timeout = 60000) => {
+      const sdk = sdkRef.current;
+      if (!sdk || !sdkReady) {
+        throw new Error("SDK not initialized. Please refresh the page.");
+      }
+      if (!userToken || !encryptionKey) {
+        throw new Error("Session expired. Please login again at /auth");
+      }
+
+      sdk.setAuthentication({ userToken, encryptionKey });
+
+      // Create the SDK execute promise
+      const executePromise = new Promise<{ transactionHash?: string }>((resolve, reject) => {
+        sdk.execute(challengeId, (error, result) => {
+          if (error) {
+            console.error("Circle SDK execute error:", error);
+            const errorMsg = error && typeof error === 'object' && 'message' in error
+              ? String(error.message)
+              : 'Transaction cancelled or failed';
+            reject(new Error(errorMsg));
+          } else {
+            console.log("Circle SDK execute result:", result);
+            resolve(result as { transactionHash?: string });
+          }
+        });
+      });
+
+      // Create timeout promise
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error("Transaction timeout - please check your wallet or try again"));
+        }, timeout);
+      });
+
+      // Race between execute and timeout
+      return Promise.race([executePromise, timeoutPromise]);
+    },
+    [encryptionKey, sdkReady, userToken]
+  );
+
+  // ============ CONTRACT TX ============
+
+  const runContractTx = useCallback(
+    async (label: string, contractAddress: string, abi: string[], method: string, args: unknown[] = []) => {
+      if (!userToken || !walletId || !walletAddress) {
+        pushToast({ type: "error", title: "Connect wallet first", detail: "Please sign in at /auth" });
+        return null;
+      }
+
+      if (!encryptionKey) {
+        pushToast({ type: "error", title: "Session expired", detail: "Please sign in again at /auth" });
+        return null;
+      }
+
+      if (!sdkReady) {
+        pushToast({ type: "error", title: "SDK not ready", detail: "Please refresh the page" });
+        return null;
+      }
+
+      // Validate chain matches wallet blockchain before any transaction
+      if (walletBlockchain) {
+        const blockchain = walletBlockchain.toUpperCase();
+        let walletChainId: number | null = null;
+
+        if (blockchain.includes("ARC")) {
+          walletChainId = 5042002;
+        } else if (blockchain.includes("BASE") && blockchain.includes("SEPOLIA")) {
+          walletChainId = 84532;
+        } else if (blockchain.includes("BASE") && !blockchain.includes("SEPOLIA")) {
+          walletChainId = 8453;
+        }
+
+        if (walletChainId && walletChainId !== selectedChainId) {
+          const walletChainName = CHAIN_DEPLOYMENTS[walletChainId]?.chainName || walletBlockchain;
+          console.error(`Chain mismatch: Wallet is on ${walletChainName} (${walletChainId}), but UI shows ${chainConfig.chainName} (${selectedChainId})`);
+          pushToast({
+            type: "error",
+            title: "Chain mismatch",
+            detail: `Wallet is on ${walletChainName}, switch to ${chainConfig.chainName} or select the correct chain above.`
+          });
+          return null;
+        }
+      }
+
+      setIsLoading(true);
+      try {
+        const iface = new ethers.Interface(abi);
+        const callData = iface.encodeFunctionData(method, args);
+
+        console.log(`[${label}] Creating contract execution challenge...`, {
+          contractAddress,
+          method,
+          args,
+          callData: callData.slice(0, 66) + '...',
+        });
+
+        const response = await fetch("/api/endpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "createContractExecutionChallenge",
+            userToken,
+            walletId,
+            contractAddress,
+            callData,
+            feeLevel: "MEDIUM",
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data?.error || "Failed to create challenge");
+
+        const challengeId = data?.challengeId;
+        if (!challengeId) throw new Error("Invalid challenge response from server");
+
+        pushToast({ type: "info", title: `${label} pending...`, detail: "Approve in the Circle modal" });
+        const result = await executeChallenge(challengeId);
+        
+        console.log(`[${label}] Challenge execution result:`, result);
+        
+        const txHash = result?.transactionHash;
+        
+        if (!txHash) {
+          console.error(`[${label}] No transaction hash received from Circle SDK`);
+          throw new Error("Transaction was not submitted to blockchain. Please try again or check your wallet balance.");
+        }
+        
+        const explorerUrl = `${chainConfig.explorer}/tx/${txHash}`;
+        console.log(`[${label}] Transaction submitted:`, explorerUrl);
+        
+        pushToast({ 
+          type: "success", 
+          title: `${label} confirmed`,
+          detail: `View on explorer: ${txHash.slice(0, 10)}...`
+        });
+        return result;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Transaction failed";
+        pushToast({ type: "error", title: label, detail: msg });
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [executeChallenge, pushToast, userToken, walletAddress, walletId, walletBlockchain, hasManuallyChangedChain, selectedChainId, chainConfig]
+  );
+
+  // ============ REFRESH DATA ============
+
+  const refreshData = useCallback(async () => {
+    if (!rpcProvider) return;
+
+    try {
+      // NFT Data
+      try {
+        const nft = new ethers.Contract(chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, rpcProvider);
+        const [admin, nextId] = await Promise.all([nft.admin(), nft.nextTokenId()]);
+        setNftAdmin(admin);
+        setNftNextTokenId(nextId);
+
+        const tokenId = BigInt(nftTokenId || "1");
+        try {
+          const [phase, controller, owner, uri] = await Promise.all([
+            nft.tokenPhase(tokenId),
+            nft.tokenController(tokenId),
+            nft.ownerOf(tokenId),
+            nft.tokenURI(tokenId),
+          ]);
+          setNftTokenPhase(Number(phase));
+          setNftTokenController(controller);
+          setNftTokenOwner(owner);
+          setNftTokenUri(uri);
+        } catch {
+          setNftTokenPhase(null);
+          setNftTokenController("");
+          setNftTokenOwner("");
+          setNftTokenUri("");
+        }
+      } catch (error) {
+        console.error("Error loading NFT data:", error);
+      }
+
+      // Factory Data
+      try {
+        const factory = new ethers.Contract(chainConfig.contracts.AuctionFactory, FACTORY_ABI, rpcProvider);
+        const [fOwner, auctions] = await Promise.all([factory.owner(), factory.getAuctions()]);
+        setFactoryOwner(fOwner);
+        setAuctionsList(auctions);
+      } catch (error) {
+        console.error("Error loading Factory data:", error);
+      }
+
+      // Set defaults
+      if (!launchNftContract) setLaunchNftContract(chainConfig.contracts.HouseNFT);
+      if (!launchPaymentToken) setLaunchPaymentToken(chainConfig.usdc);
+      if (!launchTreasury && walletAddress) setLaunchTreasury(walletAddress);
+
+      // Auction Data
+      try {
+        const auctionAddr = selectedAuction || chainConfig.contracts.AuctionManager;
+        if (auctionAddr) {
+          const auction = new ethers.Contract(auctionAddr, AUCTION_ABI, rpcProvider);
+          const [owner, phase, leader, highBid, floorPrice, participationFee, minIncrement, winner, finalized, paused] = await Promise.all([
+            auction.owner(),
+            auction.currentPhase(),
+            auction.currentLeader(),
+            auction.currentHighBid(),
+            auction.floorPrice().catch(() => BigInt(0)),
+            auction.participationFee().catch(() => BigInt(0)),
+            auction.minBidIncrement().catch(() => BigInt(0)),
+            auction.winner(),
+            auction.finalized(),
+            auction.paused(),
+          ]);
+          setAuctionOwner(owner);
+          setAuctionPhase(Number(phase));
+          setAuctionLeader(leader);
+          setAuctionHighBid(highBid);
+          setAuctionFloorPrice(floorPrice);
+          setAuctionParticipationFee(participationFee);
+          setAuctionMinIncrement(minIncrement);
+          setAuctionWinner(winner);
+          setAuctionFinalized(finalized);
+          setAuctionPaused(paused);
+
+          try {
+            const [timeRem, bidderCount] = await Promise.all([
+              auction.getTimeRemaining(),
+              auction.getBidderCount(),
+            ]);
+            setAuctionTimeRemaining(timeRem);
+            setAuctionBidderCount(Number(bidderCount));
+          } catch {
+            setAuctionTimeRemaining(null);
+            setAuctionBidderCount(null);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading Auction data:", error);
+      }
+      // Update last refreshed timestamp
+      setLastRefreshed(new Date());
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      pushToast({ type: "error", title: "Failed to load data", detail: errorMsg });
+    }
+  }, [rpcProvider, chainConfig, nftTokenId, selectedAuction, launchNftContract, launchPaymentToken, launchTreasury, walletAddress, pushToast]);
+
+  // Only fetch on mount - no auto-refresh to save RPC calls
+  useEffect(() => {
+    refreshData();
+  }, [refreshData]);
+
+  // ============ NFT ACTIONS ============
+
+  const handleMint = async () => {
+    if (!ethers.isAddress(mintRecipient)) {
+      pushToast({ type: "error", title: "Invalid recipient" });
+      return;
+    }
+    await runContractTx("Mint NFT", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "mintTo", [mintRecipient]);
+    refreshData();
+  };
+
+  const handleSetController = async () => {
+    if (!ethers.isAddress(setControllerAddr)) {
+      pushToast({ type: "error", title: "Invalid controller address" });
+      return;
+    }
+    await runContractTx("Set Controller", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "setController", [
+      BigInt(nftTokenId),
+      setControllerAddr,
+    ]);
+    refreshData();
+  };
+
+  const handleSetPhaseUris = async () => {
+    if (phaseUris.some((u) => !u.trim())) {
+      pushToast({ type: "error", title: "Fill all 4 URIs" });
+      return;
+    }
+    await runContractTx("Set Phase URIs", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "setPhaseURIs", [
+      BigInt(nftTokenId),
+      phaseUris,
+    ]);
+    refreshData();
+  };
+
+  const handleUpdateSingleUri = async () => {
+    if (!singlePhaseUri.trim()) {
+      pushToast({ type: "error", title: "URI required" });
+      return;
+    }
+    await runContractTx("Update Phase URI", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "updatePhaseURI", [
+      BigInt(nftTokenId),
+      Number(singlePhaseIdx),
+      singlePhaseUri,
+    ]);
+    refreshData();
+  };
+
+  const handleAdvanceNftPhase = async () => {
+    await runContractTx("Advance NFT Phase", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "advancePhase", [
+      BigInt(nftTokenId),
+    ]);
+    refreshData();
+  };
+
+  const handleTransferNftToFactory = async () => {
+    if (!walletAddress) return;
+    await runContractTx("Transfer NFT to Factory", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "safeTransferFrom", [
+      walletAddress,
+      chainConfig.contracts.AuctionFactory,
+      BigInt(nftTokenId),
+    ]);
+    refreshData();
+  };
+
+  const handleTransferAdmin = async () => {
+    if (!ethers.isAddress(transferAdminAddr)) {
+      pushToast({ type: "error", title: "Invalid admin address" });
+      return;
+    }
+    await runContractTx("Transfer Admin", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "transferAdmin", [
+      transferAdminAddr,
+    ]);
+    refreshData();
+  };
+
+  // ============ LAUNCH AUCTION ============
+
+  const handleLaunchAuction = async () => {
+    if (!ethers.isAddress(launchNftContract) || !ethers.isAddress(launchPaymentToken) || !ethers.isAddress(launchTreasury)) {
+      pushToast({ type: "error", title: "Invalid addresses" });
+      return;
+    }
+
+    // Verify NFT is owned by the factory
+    if (rpcProvider) {
+      try {
+        const nft = new ethers.Contract(launchNftContract, HOUSE_NFT_ABI, rpcProvider);
+        const owner = await nft.ownerOf(BigInt(launchTokenId));
+        
+        if (owner.toLowerCase() !== chainConfig.contracts.AuctionFactory.toLowerCase()) {
+          pushToast({ 
+            type: "error", 
+            title: "NFT not transferred", 
+            detail: "Transfer the NFT to the Factory first (see Manage NFT tab)" 
+          });
+          return;
+        }
+      } catch (error) {
+        console.error("Error checking NFT owner:", error);
+        pushToast({ 
+          type: "error", 
+          title: "Cannot verify NFT", 
+          detail: "Make sure the NFT contract and token ID are correct" 
+        });
+        return;
+      }
+    }
+
+    const durations = launchPhaseDurations.map((d) => BigInt(d || "0"));
+    const floorPrice = ethers.parseUnits(launchFloorPrice || "0", 6);
+    const participationFee = ethers.parseUnits(launchParticipationFee || "0", 6);
+
+    const result = await runContractTx("Create Auction", chainConfig.contracts.AuctionFactory, FACTORY_ABI, "createAuction", [
+      walletAddress, // admin
+      launchPaymentToken,
+      launchNftContract,
+      BigInt(launchTokenId),
+      durations,
+      floorPrice,
+      BigInt(launchMinIncrement),
+      launchEnforceIncrement,
+      participationFee,
+      launchTreasury,
+    ]);
+    
+    if (!result || !result.transactionHash) {
+      console.error("Auction creation failed - no transaction hash received");
+      return;
+    }
+    
+    // Fetch the new auction address from the transaction receipt
+    try {
+      console.log("Waiting for transaction receipt...");
+      const receipt = await rpcProvider?.getTransactionReceipt(result.transactionHash);
+      
+      if (receipt && receipt.logs.length > 0) {
+        // Parse the AuctionCreated event to get the new auction address
+        const factoryInterface = new ethers.Interface([
+          "event AuctionCreated(address indexed auction, address indexed nftContract, uint256 indexed tokenId)"
+        ]);
+        
+        for (const log of receipt.logs) {
+          try {
+            const parsed = factoryInterface.parseLog({
+              topics: log.topics as string[],
+              data: log.data
+            });
+            
+            if (parsed && parsed.name === "AuctionCreated") {
+              const newAuctionAddress = parsed.args[0];
+              console.log("✅ New auction created at:", newAuctionAddress);
+              pushToast({
+                type: "success",
+                title: "Auction created successfully!",
+                detail: `Address: ${newAuctionAddress.slice(0, 10)}... - Check Auctions page`
+              });
+              break;
+            }
+          } catch (e) {
+            // Skip logs that don't match
+            continue;
+          }
+        }
+      } else {
+        console.warn("Transaction receipt has no logs");
+      }
+    } catch (error) {
+      console.error("Error fetching auction address from receipt:", error);
+      // Still successful, just couldn't parse the address
+    }
+    
+    // Don't refresh immediately to avoid rate limits
+    console.log("✅ Auction created. Visit Auctions page or wait for auto-refresh.");
+  };
+
+  // ============ MANAGE AUCTION ============
+
+  const handleAuctionAction = async (label: string, method: string, args: unknown[] = []) => {
+    const addr = selectedAuction || chainConfig.contracts.AuctionManager;
+    await runContractTx(label, addr, AUCTION_ABI, method, args);
+    refreshData();
+  };
+
+  // ============ RENDER ============
+
+  const formatTime = (seconds: bigint | null) => {
+    if (seconds === null) return "-";
+    const s = Number(seconds);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return `${h}h ${m}m`;
+  };
+
+  const formatUsdc = (amount: bigint | null) => {
+    if (amount === null) return "-";
+    return ethers.formatUnits(amount, 6);
+  };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-[1400px] px-3 py-4">
-        <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <div className="text-xs text-neutral-400">Admin · Progressive Reveal</div>
-            <h1 className="text-xl font-semibold tracking-tight">Fases (Momento 0 → 3)</h1>
-            <p className="mt-1 text-sm text-neutral-400">
-              Arrastra traits/media, edita valores y exporta JSON por fase (sin display_type).
-            </p>
+    <div className="min-h-screen bg-[#030712] text-white">
+      <Header />
+
+      <div className="mx-auto max-w-5xl px-6 py-8">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+            <p className="text-sm text-white/50">Manage NFTs, Launch & Control Auctions</p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => {
-                setMeta(BASE_META);
-                setPhases(DEFAULT_PHASES);
-                localStorage.removeItem(STORAGE_KEY);
+          <div className="flex items-center gap-3">
+            <select
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm"
+              value={selectedChainId}
+              onChange={(e) => {
+                setSelectedChainId(Number(e.target.value));
+                setHasManuallyChangedChain(true);
               }}
-              className="rounded-lg bg-neutral-800 px-3 py-2 text-xs hover:bg-neutral-700"
             >
-              Reset
-            </button>
+              {Object.values(CHAIN_DEPLOYMENTS).map((c) => (
+                <option key={c.chainId} value={c.chainId}>
+                  {c.chainName}
+                </option>
+              ))}
+            </select>
 
-            <button
-              onClick={() => downloadJson("base_meta.json", meta)}
-              className="rounded-lg bg-neutral-800 px-3 py-2 text-xs hover:bg-neutral-700"
-            >
-              Descargar base JSON
-            </button>
-
-            <button
-              onClick={() => {
-                const bundle = {
-                  generated_at: new Date().toISOString(),
-                  phases: {
-                    momento0: buildPhaseMetadata("momento0"),
-                    momento1: buildPhaseMetadata("momento1"),
-                    momento2: buildPhaseMetadata("momento2"),
-                    momento3: buildPhaseMetadata("momento3"),
-                  },
-                };
-                downloadJson("reveal_bundle.json", bundle);
-              }}
-              className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium hover:bg-emerald-500"
-            >
-              Exportar bundle (4 fases)
-            </button>
-
-            <button
-              onClick={() => {
-                const bundle = {
-                  generated_at: new Date().toISOString(),
-                  phases: {
-                    momento0: buildPhaseMetadata("momento0"),
-                    momento1: buildPhaseMetadata("momento1"),
-                    momento2: buildPhaseMetadata("momento2"),
-                    momento3: buildPhaseMetadata("momento3"),
-                  },
-                };
-                uploadJsonToIpfs("reveal_bundle.json", bundle);
-              }}
-              className="rounded-lg bg-cyan-700 px-3 py-2 text-xs font-medium hover:bg-cyan-600 disabled:opacity-60"
-              disabled={uploading}
-            >
-              {uploading ? "Subiendo..." : "Subir a IPFS"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={refreshData}
+                className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
+              >
+                Refresh
+              </button>
+              {lastRefreshed && (
+                <span className="text-xs text-white/40">
+                  Last: {lastRefreshed.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
           </div>
-        </header>
+        </div>
 
-        {(uploadResult || uploadError) && (
-          <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-900/50 p-3">
-            <div className="text-sm font-medium text-neutral-200">IPFS (Pinata)</div>
-            {uploadError && (
-              <div className="mt-2 text-xs text-red-300">{uploadError}</div>
-            )}
-            {uploadResult && (
-              <div className="mt-2 grid gap-1 text-xs text-neutral-300">
-                <div>
-                  <span className="text-neutral-500">Archivo:</span> {uploadResult.name}
+        {/* Session Status */}
+        <div className="mb-6 flex flex-wrap items-center gap-3 text-sm">
+          <div className={`rounded-full px-3 py-1 ${hasSession ? "bg-emerald-500/20 text-emerald-300" : "bg-red-500/20 text-red-300"}`}>
+            {hasSession ? `Connected: ${shorten(walletAddress)}` : "Not connected"}
+          </div>
+          {!hasSession && (
+            <button onClick={restoreSession} className="rounded-full border border-white/20 px-3 py-1 text-white/60 hover:bg-white/5">
+              Load Session
+            </button>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6 border-b border-white/10 pb-4">
+          {[
+            { id: "nft", label: "Manage NFT" },
+            { id: "launch", label: "Launch Auction" },
+            { id: "manage", label: "Manage Auction" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as Tab)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === tab.id
+                  ? "bg-cyan-500 text-black"
+                  : "bg-white/5 text-white/70 hover:bg-white/10"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ============ MANAGE NFT TAB ============ */}
+        {activeTab === "nft" && (
+          <div className="space-y-6">
+            {/* NFT Info */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h2 className="text-lg font-semibold mb-4">HouseNFT Contract</h2>
+              <div className="grid gap-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-white/50">Address</span>
+                  <span className="font-mono">{shorten(chainConfig.contracts.HouseNFT)}</span>
                 </div>
-                <div>
-                  <span className="text-neutral-500">CID:</span> {uploadResult.cid}
+                <div className="flex justify-between">
+                  <span className="text-white/50">Admin</span>
+                  <span className={isNftAdmin ? "text-emerald-400" : ""}>{shorten(nftAdmin)}</span>
                 </div>
-                <div>
-                  <span className="text-neutral-500">IPFS:</span> {uploadResult.ipfsUrl}
-                </div>
-                <div>
-                  <span className="text-neutral-500">Gateway:</span>{" "}
-                  <a
-                    href={uploadResult.gatewayUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-cyan-300 hover:underline"
-                  >
-                    {uploadResult.gatewayUrl}
-                  </a>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Next Token ID</span>
+                  <span>{nftNextTokenId?.toString() ?? "-"}</span>
                 </div>
               </div>
-            )}
+            </div>
+
+            {/* Token Query */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h3 className="font-semibold mb-3">Query Token</h3>
+              <div className="flex gap-3 mb-4">
+                <input
+                  className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                  placeholder="Token ID"
+                  value={nftTokenId}
+                  onChange={(e) => setNftTokenId(e.target.value)}
+                />
+                <button onClick={refreshData} className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/20">
+                  Query
+                </button>
+              </div>
+              <div className="grid gap-2 text-sm text-white/70">
+                <div>Phase: <span className="text-white">{nftTokenPhase ?? "-"}</span></div>
+                <div>Controller: <span className="text-white font-mono">{shorten(nftTokenController)}</span></div>
+                <div>Owner: <span className="text-white font-mono">{shorten(nftTokenOwner)}</span></div>
+                <div className="truncate">URI: <span className="text-white">{nftTokenUri || "-"}</span></div>
+              </div>
+            </div>
+
+            {/* Mint */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h3 className="font-semibold mb-3">Mint NFT</h3>
+              <div className="flex gap-3">
+                <input
+                  className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                  placeholder="Recipient address"
+                  value={mintRecipient}
+                  onChange={(e) => setMintRecipient(e.target.value)}
+                />
+                <button
+                  onClick={handleMint}
+                  disabled={!isNftAdmin || isLoading}
+                  className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+                >
+                  Mint
+                </button>
+              </div>
+              {!isNftAdmin && <p className="mt-2 text-xs text-red-400">Only NFT admin can mint</p>}
+            </div>
+
+            {/* Set Controller */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h3 className="font-semibold mb-3">Set Controller (for Token #{nftTokenId})</h3>
+              <div className="flex gap-3">
+                <input
+                  className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                  placeholder="Controller address (usually AuctionManager)"
+                  value={setControllerAddr}
+                  onChange={(e) => setSetControllerAddr(e.target.value)}
+                />
+                <button
+                  onClick={handleSetController}
+                  disabled={!isNftAdmin || isLoading}
+                  className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+                >
+                  Set
+                </button>
+              </div>
+            </div>
+
+            {/* Set Phase URIs */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h3 className="font-semibold mb-3">Set Phase URIs (Token #{nftTokenId})</h3>
+              <div className="grid gap-2 mb-3">
+                {phaseUris.map((uri, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input
+                      className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                      placeholder={`Phase ${i} URI (ipfs://...)`}
+                      value={uri}
+                      onChange={(e) => {
+                        const next = [...phaseUris];
+                        next[i] = e.target.value;
+                        setPhaseUris(next);
+                      }}
+                    />
+                    <button
+                      onClick={() => setShowBuilder(showBuilder === i ? null : i)}
+                      className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                        showBuilder === i
+                          ? "bg-cyan-600 text-white"
+                          : "bg-white/10 text-white/70 hover:bg-white/15"
+                      }`}
+                    >
+                      {showBuilder === i ? "Close Builder" : "Build"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Inline Metadata Builder */}
+              {showBuilder !== null && (
+                <div className="mb-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-cyan-300">
+                      Metadata Builder &mdash; Phase {showBuilder}
+                    </h4>
+                    <button
+                      onClick={() => setShowBuilder(null)}
+                      className="text-xs text-white/50 hover:text-white"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <PhaseMetadataBuilder
+                    singlePhase={showBuilder}
+                    onUploaded={(phaseIndex, ipfsUri) => {
+                      const next = [...phaseUris];
+                      next[phaseIndex] = ipfsUri;
+                      setPhaseUris(next);
+                    }}
+                  />
+                </div>
+              )}
+
+              <button
+                onClick={handleSetPhaseUris}
+                disabled={!isNftAdmin || isLoading}
+                className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+              >
+                Set All URIs
+              </button>
+            </div>
+
+            {/* Update Single URI */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h3 className="font-semibold mb-3">Update Single Phase URI</h3>
+              <div className="flex gap-3 mb-3">
+                <select
+                  className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                  value={singlePhaseIdx}
+                  onChange={(e) => setSinglePhaseIdx(e.target.value)}
+                >
+                  {[0, 1, 2, 3].map((i) => (
+                    <option key={i} value={i}>Phase {i}</option>
+                  ))}
+                </select>
+                <input
+                  className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                  placeholder="New URI"
+                  value={singlePhaseUri}
+                  onChange={(e) => setSinglePhaseUri(e.target.value)}
+                />
+                <button
+                  onClick={handleUpdateSingleUri}
+                  disabled={!isNftAdmin || isLoading}
+                  className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+                >
+                  Update
+                </button>
+              </div>
+            </div>
+
+            {/* Advance Phase & Transfer */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+                <h3 className="font-semibold mb-3">Advance NFT Phase</h3>
+                <p className="text-xs text-white/50 mb-3">Current phase: {nftTokenPhase ?? "-"}</p>
+                <button
+                  onClick={handleAdvanceNftPhase}
+                  disabled={!isNftAdmin || isLoading}
+                  className="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+                >
+                  Advance Phase
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+                <h3 className="font-semibold mb-3">Transfer NFT to Factory</h3>
+                <p className="text-xs text-white/50 mb-3">Required before creating auction</p>
+                <button
+                  onClick={handleTransferNftToFactory}
+                  disabled={isLoading}
+                  className="w-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+                >
+                  Transfer to Factory
+                </button>
+              </div>
+            </div>
+
+            {/* Transfer Admin */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h3 className="font-semibold mb-3">Transfer NFT Admin</h3>
+              <div className="flex gap-3">
+                <input
+                  className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                  placeholder="New admin address"
+                  value={transferAdminAddr}
+                  onChange={(e) => setTransferAdminAddr(e.target.value)}
+                />
+                <button
+                  onClick={handleTransferAdmin}
+                  disabled={!isNftAdmin || isLoading}
+                  className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  Transfer
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
-        <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-12">
-          {/* LEFT: fases + overrides */}
-          <aside className={clsx("xl:col-span-3", panelHeight)}>
-            <div className="h-full overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50">
-              <div className="h-full overflow-auto p-3">
-                <div className="text-sm font-medium text-neutral-200">Fases</div>
-
-                <div className="mt-2 grid gap-2">
-                  {(["momento0", "momento1", "momento2", "momento3"] as PhaseKey[]).map((k) => {
-                    const cfg = phases[k];
-                    const active = k === activePhase;
-                    return (
-                      <button
-                        key={k}
-                        onClick={() => setActivePhase(k)}
-                        className={clsx(
-                          "rounded-lg border px-3 py-2 text-left transition",
-                          active
-                            ? "border-emerald-500/60 bg-emerald-500/10"
-                            : "border-neutral-800 bg-neutral-950/30 hover:bg-neutral-950/60"
-                        )}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm font-medium">{cfg.title}</div>
-                          <span className="rounded-md bg-neutral-800 px-2 py-1 text-[11px] text-neutral-200">
-                            phase {cfg.revealPhaseNumber}
-                          </span>
-                        </div>
-                        <div className="mt-1 text-[11px] text-neutral-400">
-                          Traits: {cfg.traits.length} · Media: {cfg.mediaKeys.length}
-                        </div>
-                      </button>
-                    );
-                  })}
+        {/* ============ LAUNCH AUCTION TAB ============ */}
+        {activeTab === "launch" && (
+          <div className="space-y-6">
+            {/* Factory Info */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h2 className="text-lg font-semibold mb-4">AuctionFactory</h2>
+              <div className="grid gap-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-white/50">Address</span>
+                  <span className="font-mono">{shorten(chainConfig.contracts.AuctionFactory)}</span>
                 </div>
-
-                <div className="mt-4 border-t border-neutral-800 pt-3">
-                  <div className="text-sm font-medium text-neutral-200">Overrides del momento</div>
-
-                  <div className="mt-2 grid gap-2">
-                    <label className="text-[11px] text-neutral-400">Name</label>
-                    <input
-                      className="w-full rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-xs outline-none focus:border-emerald-500/60"
-                      value={phase.overrides?.name ?? ""}
-                      onChange={(e) =>
-                        setPhases((p) => ({
-                          ...p,
-                          [activePhase]: {
-                            ...p[activePhase],
-                            overrides: { ...(p[activePhase].overrides || {}), name: e.target.value },
-                          },
-                        }))
-                      }
-                      placeholder="Nombre para esta fase"
-                    />
-
-                    <label className="text-[11px] text-neutral-400">Description</label>
-                    <textarea
-                      className="min-h-[70px] w-full rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-xs outline-none focus:border-emerald-500/60"
-                      value={phase.overrides?.description ?? ""}
-                      onChange={(e) =>
-                        setPhases((p) => ({
-                          ...p,
-                          [activePhase]: {
-                            ...p[activePhase],
-                            overrides: { ...(p[activePhase].overrides || {}), description: e.target.value },
-                          },
-                        }))
-                      }
-                      placeholder="Descripción para esta fase"
-                    />
-
-                    <label className="text-[11px] text-neutral-400">Image (IPFS)</label>
-                    <input
-                      className="w-full rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-xs outline-none focus:border-emerald-500/60"
-                      value={phase.overrides?.image ?? ""}
-                      onChange={(e) =>
-                        setPhases((p) => ({
-                          ...p,
-                          [activePhase]: {
-                            ...p[activePhase],
-                            overrides: { ...(p[activePhase].overrides || {}), image: e.target.value },
-                          },
-                        }))
-                      }
-                      placeholder="ipfs://..."
-                    />
-
-                    <label className="text-[11px] text-neutral-400">Animation (IPFS)</label>
-                    <input
-                      className="w-full rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-xs outline-none focus:border-emerald-500/60"
-                      value={phase.overrides?.animation_url ?? ""}
-                      onChange={(e) =>
-                        setPhases((p) => ({
-                          ...p,
-                          [activePhase]: {
-                            ...p[activePhase],
-                            overrides: { ...(p[activePhase].overrides || {}), animation_url: e.target.value },
-                          },
-                        }))
-                      }
-                      placeholder="ipfs://..."
-                    />
-
-                    <button
-                      onClick={() => downloadJson(`${activePhase}.json`, buildPhaseMetadata(activePhase))}
-                      className="mt-1 w-full rounded-lg bg-neutral-800 px-3 py-2 text-xs hover:bg-neutral-700"
-                    >
-                      Descargar JSON de este momento
-                    </button>
-                  </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Owner</span>
+                  <span className={isFactoryOwner ? "text-emerald-400" : ""}>{shorten(factoryOwner)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Auctions Created</span>
+                  <span>{auctionsList.length}</span>
                 </div>
               </div>
             </div>
-          </aside>
 
-          {/* MIDDLE: inventario */}
-          <section className={clsx("xl:col-span-4", panelHeight)}>
-            <div className="h-full overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50">
-              <div className="flex items-center justify-between gap-2 border-b border-neutral-800 p-3">
+            {/* Warning */}
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+              <strong>Important:</strong> Before creating an auction, the NFT must be transferred to the Factory contract.
+              Use the "Transfer NFT to Factory" button in the Manage NFT tab.
+            </div>
+
+            {/* Launch Form */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h3 className="font-semibold mb-4">Create New Auction</h3>
+
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <div className="text-sm font-medium text-neutral-200">Inventario</div>
-                  <div className="text-[11px] text-neutral-400">Arrastra o marca lo que se revela en {phase.title}.</div>
+                  <label className="text-xs text-white/50 mb-1 block">NFT Contract</label>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                    value={launchNftContract}
+                    onChange={(e) => setLaunchNftContract(e.target.value)}
+                  />
                 </div>
+                <div>
+                  <label className="text-xs text-white/50 mb-1 block">Token ID</label>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                    value={launchTokenId}
+                    onChange={(e) => setLaunchTokenId(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-white/50 mb-1 block">Payment Token (USDC)</label>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                    value={launchPaymentToken}
+                    onChange={(e) => setLaunchPaymentToken(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-white/50 mb-1 block">Treasury Address</label>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                    value={launchTreasury}
+                    onChange={(e) => setLaunchTreasury(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <label className="text-xs text-white/50 mb-2 block">Phase Durations (seconds)</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {launchPhaseDurations.map((d, i) => (
+                    <div key={i}>
+                      <span className="text-xs text-white/40">Phase {i}</span>
+                      <input
+                        className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                        value={d}
+                        onChange={(e) => {
+                          const next = [...launchPhaseDurations];
+                          next[i] = e.target.value;
+                          setLaunchPhaseDurations(next);
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3 mt-4">
+                <div>
+                  <label className="text-xs text-white/50 mb-1 block">Floor Price (USDC)</label>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                    value={launchFloorPrice}
+                    onChange={(e) => setLaunchFloorPrice(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-white/50 mb-1 block">Min Increment (%)</label>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                    value={launchMinIncrement}
+                    onChange={(e) => setLaunchMinIncrement(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-white/50 mb-1 block">Participation Fee (USDC)</label>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                    value={launchParticipationFee}
+                    onChange={(e) => setLaunchParticipationFee(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 mt-4 text-sm text-white/70">
                 <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Buscar…"
-                  className="w-[170px] rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-xs outline-none focus:border-emerald-500/60"
+                  type="checkbox"
+                  checked={launchEnforceIncrement}
+                  onChange={(e) => setLaunchEnforceIncrement(e.target.checked)}
                 />
-              </div>
+                Enforce minimum bid increment
+              </label>
 
-              <div className="h-full overflow-auto p-3">
-                <div className="rounded-xl border border-neutral-800 bg-neutral-950/30 p-3">
-                  <div className="text-sm font-medium">Traits</div>
-                  <div className="mt-2 grid gap-2">
-                    {filteredTraits.map((t) => {
-                      const picked = phase.traits.includes(t);
-                      return (
-                        <div
-                          key={t}
-                          draggable
-                          onDragStart={(e) => onDragStart(e, { kind: "trait", value: t })}
-                          className={clsx(
-                            "flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs",
-                            picked
-                              ? "border-emerald-500/60 bg-emerald-500/10"
-                              : "border-neutral-800 bg-neutral-950/20 hover:bg-neutral-950/40"
-                          )}
-                        >
-                          <div className="min-w-0 truncate">{t}</div>
-                          <button
-                            onClick={() => toggleTrait(t)}
-                            className={clsx(
-                              "rounded-md px-2 py-1 text-[11px]",
-                              picked ? "bg-emerald-600 hover:bg-emerald-500" : "bg-neutral-800 hover:bg-neutral-700"
-                            )}
-                          >
-                            {picked ? "Incluido" : "Añadir"}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-950/30 p-3">
-                  <div className="text-sm font-medium">Media (keys)</div>
-                  <div className="mt-2 grid gap-2">
-                    {filteredMediaKeys.map((k) => {
-                      const picked = phase.mediaKeys.includes(k);
-                      return (
-                        <div
-                          key={k}
-                          draggable
-                          onDragStart={(e) => onDragStart(e, { kind: "media", value: k })}
-                          className={clsx(
-                            "flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs",
-                            picked
-                              ? "border-emerald-500/60 bg-emerald-500/10"
-                              : "border-neutral-800 bg-neutral-950/20 hover:bg-neutral-950/40"
-                          )}
-                        >
-                          <div className="min-w-0 truncate">{k}</div>
-                          <button
-                            onClick={() => toggleMediaKey(k)}
-                            className={clsx(
-                              "rounded-md px-2 py-1 text-[11px]",
-                              picked ? "bg-emerald-600 hover:bg-emerald-500" : "bg-neutral-800 hover:bg-neutral-700"
-                            )}
-                          >
-                            {picked ? "Incluido" : "Añadir"}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* RIGHT: editor + preview */}
-          <section className={clsx("xl:col-span-5", panelHeight)}>
-            <div
-              onDrop={onDropToPhase}
-              onDragOver={allowDrop}
-              className="h-full overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50"
-            >
-              <div className="flex items-start justify-between gap-2 border-b border-neutral-800 p-3">
-                <div>
-                  <div className="text-sm font-medium text-neutral-200">Dropzone · {phase.title}</div>
-                  <div className="text-[11px] text-neutral-400">Suelta aquí traits/media para agregarlos a esta fase.</div>
-                </div>
-                <span className="rounded-md bg-neutral-800 px-2 py-1 text-[11px] text-neutral-200">
-                  phase {phase.revealPhaseNumber}
-                </span>
-              </div>
-
-              <div className="h-full overflow-auto p-3">
-                {/* Traits editor */}
-                <div className="rounded-xl border border-neutral-800 bg-neutral-950/30 p-3">
-                  <div className="text-sm font-medium">Incluye Traits (editable)</div>
-
-                  <div className="mt-2 grid gap-2">
-                    {phase.traits.length === 0 ? (
-                      <span className="text-xs text-neutral-500">Nada aún… suelta algo acá.</span>
-                    ) : (
-                      phase.traits
-                        .slice()
-                        .sort((a, b) => a.localeCompare(b))
-                        .map((t) => {
-                          const eff = getEffectiveTrait(t);
-                          const base = getBaseTrait(t);
-                          const hasOverride = !!phase.traitOverrides?.[t];
-                          if (!eff || !base) return null;
-
-                          return (
-                            <div key={t} className="rounded-lg border border-neutral-800 bg-neutral-950/20 p-3">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <div className="truncate text-xs font-semibold">{t}</div>
-                                  <div className="mt-1 text-[11px] text-neutral-500">
-                                    Base: <span className="text-neutral-200">{String(base.value)}</span>
-                                  </div>
-                                </div>
-
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => toggleTrait(t)}
-                                    className="rounded-md bg-neutral-800 px-2 py-1 text-[11px] hover:bg-neutral-700"
-                                    title="Quitar de esta fase"
-                                  >
-                                    Quitar
-                                  </button>
-                                  <button
-                                    onClick={() => clearTraitOverride(t)}
-                                    disabled={!hasOverride}
-                                    className={clsx(
-                                      "rounded-md px-2 py-1 text-[11px]",
-                                      hasOverride ? "bg-amber-600 hover:bg-amber-500" : "bg-neutral-900 text-neutral-600"
-                                    )}
-                                    title="Volver al valor base"
-                                  >
-                                    Reset
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="mt-2">
-                                <label className="text-[11px] text-neutral-400">Value</label>
-                                <input
-                                  className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-xs outline-none focus:border-emerald-500/60"
-                                  value={String(eff.value)}
-                                  onChange={(e) => {
-                                    // Si el base es number, guardamos number; si no, string.
-                                    const raw = e.target.value;
-                                    if (typeof base.value === "number") {
-                                      const num = Number(raw);
-                                      setTraitOverride(t, Number.isFinite(num) ? num : 0);
-                                    } else {
-                                      setTraitOverride(t, raw);
-                                    }
-                                  }}
-                                />
-                              </div>
-
-                              <div className="mt-2 text-[11px]">
-                                {hasOverride ? (
-                                  <span className="text-emerald-400">Editado en {phase.title} ✓</span>
-                                ) : (
-                                  <span className="text-neutral-500">Usando valor base</span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })
-                    )}
-                  </div>
-                </div>
-
-                {/* Media includes */}
-                <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-950/30 p-3">
-                  <div className="text-sm font-medium">Incluye Media</div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {phase.mediaKeys.length === 0 ? (
-                      <span className="text-xs text-neutral-500">Nada aún… suelta algo acá.</span>
-                    ) : (
-                      phase.mediaKeys
-                        .slice()
-                        .sort((a, b) => a.localeCompare(b))
-                        .map((k) => (
-                          <button
-                            key={k}
-                            onClick={() => toggleMediaKey(k)}
-                            className="rounded-lg border border-neutral-800 bg-neutral-950/20 px-2 py-1 text-[11px] hover:bg-neutral-950/40"
-                            title="Quitar"
-                          >
-                            {k} ✕
-                          </button>
-                        ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Preview */}
-                <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-950/30 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-medium">Preview JSON (fase)</div>
-                    <button
-                      onClick={() => downloadJson(`${activePhase}.json`, activePreview)}
-                      className="rounded-lg bg-neutral-800 px-3 py-2 text-[11px] hover:bg-neutral-700"
-                    >
-                      Descargar
-                    </button>
-                  </div>
-
-                  <pre className="mt-2 max-h-[320px] overflow-auto rounded-lg border border-neutral-800 bg-neutral-950/50 p-3 text-[11px] text-neutral-200">
-{JSON.stringify(activePreview, null, 2)}
-                  </pre>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        {/* Base mini */}
-        <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-900/50 p-3">
-          <div className="text-sm font-medium text-neutral-200">Base JSON (global)</div>
-          <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-            <div>
-              <label className="text-[11px] text-neutral-400">external_url</label>
-              <input
-                className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-xs outline-none focus:border-emerald-500/60"
-                value={meta.external_url ?? ""}
-                onChange={(e) => setMeta((m) => ({ ...m, external_url: e.target.value }))}
-                placeholder="https://..."
-              />
-            </div>
-
-            <div>
-              <label className="text-[11px] text-neutral-400">properties.auction.floor_price</label>
-              <input
-                className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-xs outline-none focus:border-emerald-500/60"
-                value={String(meta.properties?.auction?.floor_price ?? "")}
-                onChange={(e) =>
-                  setMeta((m) => ({
-                    ...m,
-                    properties: {
-                      ...m.properties,
-                      auction: {
-                        ...(m.properties?.auction || {}),
-                        floor_price: Number(e.target.value || 0),
-                      },
-                    },
-                  }))
-                }
-                placeholder="500000"
-              />
+              <button
+                onClick={handleLaunchAuction}
+                disabled={!isFactoryOwner || isLoading}
+                className="mt-6 w-full rounded-lg bg-cyan-500 px-4 py-3 text-sm font-bold text-black disabled:opacity-50"
+              >
+                Create Auction
+              </button>
+              {!isFactoryOwner && <p className="mt-2 text-xs text-red-400">Only factory owner can create auctions</p>}
             </div>
           </div>
-        </div>
+        )}
 
-        <footer className="py-4 text-center text-[11px] text-neutral-500">
-          Admin reveal builder · compacto, usable, y sin display_type (como Dios manda).
-        </footer>
+        {/* ============ MANAGE AUCTION TAB ============ */}
+        {activeTab === "manage" && (
+          <div className="space-y-6">
+            {/* Auction Selector */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h2 className="text-lg font-semibold mb-4">Select Auction</h2>
+              <select
+                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                value={selectedAuction || chainConfig.contracts.AuctionManager}
+                onChange={(e) => setSelectedAuction(e.target.value)}
+              >
+                <option value={chainConfig.contracts.AuctionManager}>
+                  Default: {shorten(chainConfig.contracts.AuctionManager)}
+                </option>
+                {auctionsList.map((a) => (
+                  <option key={a} value={a}>{shorten(a)}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Auction State */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h3 className="font-semibold mb-4">Auction State</h3>
+              <div className="grid gap-3 text-sm md:grid-cols-2">
+                <div className="flex justify-between">
+                  <span className="text-white/50">Owner</span>
+                  <span className={isAuctionOwner ? "text-emerald-400" : ""}>{shorten(auctionOwner)}</span>
+                </div>
+                <div className="md:col-span-2">
+                  <span className="text-white/50 text-sm">Phase</span>
+                  <div className="mt-1">
+                    {auctionPhase !== null ? (
+                      <PhaseProgressBar phase={auctionPhase} variant="expanded" />
+                    ) : (
+                      <span className="text-cyan-400 font-bold">-</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Leader</span>
+                  <span>{shorten(auctionLeader)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">High Bid</span>
+                  <span className="text-cyan-400">{formatUsdc(auctionHighBid)} USDC</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Floor Price</span>
+                  <span className="text-emerald-400">{formatUsdc(auctionFloorPrice)} USDC</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Participation Fee</span>
+                  <span className="text-yellow-400">{formatUsdc(auctionParticipationFee)} USDC</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Min Increment</span>
+                  <span className="text-purple-400">{auctionMinIncrement ? `${auctionMinIncrement}%` : "-"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Time Remaining</span>
+                  <span>{formatTime(auctionTimeRemaining)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Bidders</span>
+                  <span>{auctionBidderCount ?? "-"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Finalized</span>
+                  <span className={auctionFinalized ? "text-emerald-400" : "text-white/70"}>
+                    {auctionFinalized === null ? "-" : auctionFinalized ? "Yes" : "No"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Paused</span>
+                  <span className={auctionPaused ? "text-red-400" : "text-white/70"}>
+                    {auctionPaused === null ? "-" : auctionPaused ? "Yes" : "No"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Winner</span>
+                  <span className="text-emerald-400">{shorten(auctionWinner)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Phase Actions */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h3 className="font-semibold mb-4">Phase Control</h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                <button
+                  onClick={() => handleAuctionAction("Advance Phase", "advancePhase")}
+                  disabled={!isAuctionOwner || isLoading}
+                  className="rounded-lg bg-cyan-500 px-4 py-3 text-sm font-medium text-black disabled:opacity-50"
+                >
+                  Advance Phase
+                </button>
+                <button
+                  onClick={() => handleAuctionAction("Finalize Auction", "finalizeAuction")}
+                  disabled={!isAuctionOwner || isLoading}
+                  className="rounded-lg bg-emerald-500 px-4 py-3 text-sm font-medium text-black disabled:opacity-50"
+                >
+                  Finalize Auction
+                </button>
+              </div>
+            </div>
+
+            {/* Financial Actions */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <h3 className="font-semibold mb-4">Financial</h3>
+              <button
+                onClick={() => handleAuctionAction("Withdraw Proceeds", "withdrawProceeds")}
+                disabled={!isAuctionOwner || isLoading}
+                className="w-full rounded-lg bg-cyan-500 px-4 py-3 text-sm font-medium text-black disabled:opacity-50"
+              >
+                Withdraw Proceeds
+              </button>
+            </div>
+
+            {/* Emergency Actions */}
+            <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5">
+              <h3 className="font-semibold mb-4 text-red-400">Emergency Actions</h3>
+              <div className="grid gap-3 md:grid-cols-2 mb-4">
+                <button
+                  onClick={() => handleAuctionAction("Pause", "pause")}
+                  disabled={!isAuctionOwner || isLoading}
+                  className="rounded-lg border border-red-500 bg-red-500/20 px-4 py-2 text-sm font-medium text-red-300 disabled:opacity-50"
+                >
+                  Pause Auction
+                </button>
+                <button
+                  onClick={() => handleAuctionAction("Unpause", "unpause")}
+                  disabled={!isAuctionOwner || isLoading}
+                  className="rounded-lg border border-emerald-500 bg-emerald-500/20 px-4 py-2 text-sm font-medium text-emerald-300 disabled:opacity-50"
+                >
+                  Unpause Auction
+                </button>
+              </div>
+
+              <div className="flex gap-3">
+                <input
+                  className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                  placeholder="Address to receive NFT"
+                  value={emergencyWithdrawTo}
+                  onChange={(e) => setEmergencyWithdrawTo(e.target.value)}
+                />
+                <button
+                  onClick={() => handleAuctionAction("Emergency Withdraw NFT", "emergencyWithdrawNFT", [emergencyWithdrawTo])}
+                  disabled={!isAuctionOwner || isLoading || !ethers.isAddress(emergencyWithdrawTo)}
+                  className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  Emergency Withdraw NFT
+                </button>
+              </div>
+            </div>
+
+            {!isAuctionOwner && hasSession && (
+              <p className="text-center text-sm text-red-400">You are not the owner of this auction</p>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Toasts */}
+      <div className="fixed right-4 top-20 z-50 space-y-2">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`rounded-lg px-4 py-3 text-sm shadow-lg ${
+              t.type === "error"
+                ? "bg-red-500/90 text-white"
+                : t.type === "success"
+                ? "bg-emerald-500/90 text-white"
+                : "bg-white/10 text-white backdrop-blur"
+            }`}
+          >
+            <div className="font-medium">{t.title}</div>
+            {t.detail && <div className="text-xs opacity-80 mt-1">{t.detail}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="rounded-xl bg-white/10 px-6 py-4 text-sm">Processing transaction...</div>
+        </div>
+      )}
     </div>
   );
 }

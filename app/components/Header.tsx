@@ -10,9 +10,10 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { label: "Marketplace", href: "/marketplace" },
+  { label: "Auctions", href: "/marketplace" },
+  { label: "Properties", href: "/properties" },
   { label: "My Account", href: "/cuenta" },
-  { label: "Admin", href: "/contracts" },
+  { label: "Admin", href: "/admin" },
 ];
 
 export default function Header() {

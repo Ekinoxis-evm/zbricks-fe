@@ -334,6 +334,7 @@ export async function POST(request: Request) {
           abiParameters,
           callData,
           feeLevel,
+          blockchain,
         } = params;
 
         if (!userToken || !walletId || !contractAddress) {
@@ -350,6 +351,28 @@ export async function POST(request: Request) {
           );
         }
 
+        // Build payload with conditional spread to exclude undefined fields
+        const payload: Record<string, unknown> = {
+          idempotencyKey: crypto.randomUUID(),
+          contractAddress,
+          walletId,
+          feeLevel: feeLevel || "MEDIUM",
+        };
+
+        // Only include optional fields if they have values
+        if (abiFunctionSignature) {
+          payload.abiFunctionSignature = abiFunctionSignature;
+        }
+        if (abiParameters && Array.isArray(abiParameters) && abiParameters.length > 0) {
+          payload.abiParameters = abiParameters;
+        }
+        if (callData) {
+          payload.callData = callData;
+        }
+        if (blockchain) {
+          payload.blockchain = blockchain;
+        }
+
         const response = await fetch(
           `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
           {
@@ -359,15 +382,7 @@ export async function POST(request: Request) {
               Authorization: `Bearer ${CIRCLE_API_KEY}`,
               "X-User-Token": userToken,
             },
-            body: JSON.stringify({
-              idempotencyKey: crypto.randomUUID(),
-              walletId,
-              contractAddress,
-              abiFunctionSignature,
-              abiParameters,
-              callData,
-              feeLevel,
-            }),
+            body: JSON.stringify(payload),
           },
         );
 
@@ -377,7 +392,9 @@ export async function POST(request: Request) {
           return NextResponse.json(data, { status: response.status });
         }
 
-        return NextResponse.json(data.data, { status: 200 });
+        // Fix response extraction - ensure we get challengeId correctly
+        const challengeId = data?.data?.challengeId ?? data?.challengeId;
+        return NextResponse.json({ challengeId }, { status: 200 });
       }
 
       case "signTypedDataChallenge": {
