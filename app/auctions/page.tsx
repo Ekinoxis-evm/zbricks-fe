@@ -8,6 +8,9 @@ import { baseSepolia, base } from "viem/chains";
 import { auctionAbi, houseNftAbi, factoryAbi, getContractsForChain, getChainMeta } from "@/lib/contracts";
 import Header from "../components/Header";
 import PhaseProgressBar from "../components/PhaseProgressBar";
+import PropertyCard from "../components/PropertyCard";
+import { fetchNFTMetadataFull, ipfsToHttp } from "@/lib/metadata";
+import type { AuctionMeta } from "@/lib/metadata";
 import type { Address } from "viem";
 
 // ============ CONSTANTS ============
@@ -99,6 +102,7 @@ interface AuctionData {
   title?: string;
   location?: string;
   image?: string;
+  metadata?: AuctionMeta | null;
 }
 
 type StatusFilter = "Todas" | "Activa" | "Finalizada";
@@ -121,32 +125,43 @@ const formatTimeRemaining = (seconds: bigint) => {
   return `${m}m`;
 };
 
-const PROPERTY_IMAGES = [
-  "/auctions/ALH_Taller_Edificio_E_Cam_01_2025_06_07.jpg",
-  "/auctions/ALH_Taller_Edificio_E_Cam_03_2025_06_07.jpg",
-  "/auctions/ALH_Taller_Edificio_E_Cam_04_2025_06_07.jpg",
-  "/auctions/ALH_Taller_Edificio_E_Cam_05_2025_06_07.jpg",
-  "/auctions/ALH_Taller_Edificio_E_Cam_06_2025_06_07.jpg",
-  "/auctions/AIN2402_AO_TTA_YAV_AV_947_ZonasComunes_04.jpg",
-];
+// Fallback image if metadata fails to load
+const FALLBACK_IMAGE = "/auctions/ALH_Taller_Edificio_E_Cam_01_2025_06_07.jpg";
 
-const PROPERTY_TITLES = [
-  "Modern Family House",
-  "Luxurious Villa",
-  "Country Cottage",
-  "Beachfront Mansion",
-  "Suburban House",
-  "Mountain Retreat",
-];
-
-const PROPERTY_LOCATIONS = [
-  "San Francisco, CA",
-  "Miami, FL",
-  "Denver, CO",
-  "Malibu, CA",
-  "Seattle, WA",
-  "Aspen, CO",
-];
+// Helper to fetch and parse NFT metadata from tokenURI
+const fetchNFTMetadata = async (tokenURI: string) => {
+  try {
+    const fullMeta = await fetchNFTMetadataFull(tokenURI);
+    if (!fullMeta) {
+      return {
+        title: "Property",
+        location: "",
+        image: FALLBACK_IMAGE,
+        fullMeta: null,
+      };
+    }
+    const image = fullMeta.image ? ipfsToHttp(fullMeta.image) : FALLBACK_IMAGE;
+    const cityTrait = fullMeta.attributes?.find((t) => t.trait_type === "City");
+    const neighborhoodTrait = fullMeta.attributes?.find((t) => t.trait_type === "Neighborhood");
+    const location = [neighborhoodTrait?.value, cityTrait?.value]
+      .filter((v) => v && String(v) !== "")
+      .join(", ") || fullMeta.description || "";
+    return {
+      title: fullMeta.name || "Property",
+      location,
+      image,
+      fullMeta,
+    };
+  } catch (error) {
+    console.error("Failed to fetch NFT metadata:", error);
+    return {
+      title: "Property",
+      location: "",
+      image: FALLBACK_IMAGE,
+      fullMeta: null,
+    };
+  }
+};
 
 // ============ COMPONENT ============
 
@@ -154,8 +169,6 @@ export default function AuctionsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [auctions, setAuctions] = useState<AuctionData[]>([]);
-  const [showStreamCard, setShowStreamCard] = useState(false);
-  const [liveExploded, setLiveExploded] = useState(false);
 
   const [selectedChainId, setSelectedChainId] = useState<number>(84532);
   const chainConfig = CHAIN_DEPLOYMENTS[selectedChainId];
@@ -271,10 +284,35 @@ export default function AuctionsPage() {
                 ],
               });
 
+              const nftContract = (results[0].result as string) ?? zeroAddress;
+              const tokenId = (results[1].result as bigint) ?? 0n;
+
+              // Fetch tokenURI to get real NFT metadata
+              let metadata = {
+                title: `Property #${Number(tokenId)}`,
+                location: "",
+                image: FALLBACK_IMAGE,
+              };
+
+              try {
+                const tokenURIResult = await publicClient.readContract({
+                  address: nftContract as Address,
+                  abi: NFT_READ_ABI,
+                  functionName: "tokenURI",
+                  args: [tokenId],
+                });
+
+                if (tokenURIResult && typeof tokenURIResult === "string") {
+                  metadata = await fetchNFTMetadata(tokenURIResult);
+                }
+              } catch (error) {
+                console.warn(`Failed to fetch tokenURI for ${addr}:`, error);
+              }
+
               return {
                 address: addr,
-                nftContract: (results[0].result as string) ?? zeroAddress,
-                tokenId: (results[1].result as bigint) ?? 0n,
+                nftContract,
+                tokenId,
                 floorPrice: (results[2].result as bigint) ?? 0n,
                 currentPhase:
                   results[3].result != null ? Number(results[3].result) : 0,
@@ -286,10 +324,10 @@ export default function AuctionsPage() {
                 timeRemaining: (results[9].result as bigint) ?? 0n,
                 bidderCount:
                   results[10].result != null ? Number(results[10].result) : 0,
-                title: PROPERTY_TITLES[index % PROPERTY_TITLES.length],
-                location:
-                  PROPERTY_LOCATIONS[index % PROPERTY_LOCATIONS.length],
-                image: PROPERTY_IMAGES[index % PROPERTY_IMAGES.length],
+                title: metadata.title,
+                location: metadata.location,
+                image: metadata.image,
+                metadata: metadata.fullMeta,
               } as AuctionData;
             } catch (error) {
               console.error(`Failed to fetch auction ${addr}:`, error);
@@ -336,12 +374,6 @@ export default function AuctionsPage() {
     };
   }, [fetchAuctions]);
 
-  useEffect(() => {
-    const streamTimer = setTimeout(() => {
-      setShowStreamCard(true);
-    }, 5000);
-    return () => clearTimeout(streamTimer);
-  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -379,24 +411,6 @@ export default function AuctionsPage() {
     <main className="min-h-screen bg-black text-white">
       <Header />
 
-      {/* ====== LIVE BUTTON (floating) ====== */}
-      {filtered.length > 0 && (
-        <div className="fixed top-20 right-5 z-40">
-          <Link
-            href={`/biddings?auction=${filtered[0].address}`}
-            className={`inline-flex items-center gap-2.5 px-3.5 py-2.5 rounded-full border transition-all ${
-              liveExploded
-                ? "bg-red-500/95 border-red-500/80 shadow-[0_0_30px_rgba(239,68,68,0.45)] animate-pulse"
-                : "bg-white/[0.04] border-white/[0.14] hover:bg-white/[0.08]"
-            }`}
-          >
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="font-black tracking-wide text-sm">
-              {liveExploded ? "JOIN LIVE" : "LIVE"}
-            </span>
-          </Link>
-        </div>
-      )}
 
       {/* ====== CONTENT ====== */}
       <section className="px-4 py-6">
@@ -517,89 +531,31 @@ export default function AuctionsPage() {
             </aside>
 
             <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
-              {filtered.map((auction, idx) => {
-                const isActive = !auction.finalized && !auction.paused;
-                const phaseLabels = ["Phase 0", "Phase 1", "Phase 2", "Final"];
-                const phaseLabel = phaseLabels[Math.min(auction.currentPhase, 3)];
-
-                return (
+              {filtered.map((auction) => (
                   <Link
                     key={auction.address}
                     href={`/biddings?auction=${auction.address}`}
                     className="block no-underline text-inherit"
                   >
-                    <article className="card rounded-2xl border border-white/10 overflow-hidden bg-white/[0.03] relative transition-all hover:-translate-y-0.5 hover:border-cyan-400/30 hover:shadow-[0_18px_50px_rgba(0,0,0,0.45)]">
-                      <div className="relative">
-                        <img
-                          src={auction.image || PROPERTY_IMAGES[idx % PROPERTY_IMAGES.length]}
-                          alt={auction.title || `Auction ${idx + 1}`}
-                          className="w-full h-[170px] object-cover block"
-                          style={{ filter: "contrast(1.05) saturate(1.05)" }}
-                        />
-
-                        <div
-                          className={`absolute top-3 left-3 px-2.5 py-1.5 rounded-full text-xs font-black border ${
-                            isActive
-                              ? "bg-green-500/20 border-green-500/30 text-green-300"
-                              : "bg-red-500/20 border-red-500/30 text-red-300"
-                          }`}
-                        >
-                          {isActive ? "Active" : "Ended"}
-                        </div>
-
-                        <div className="absolute top-3 right-3 px-2.5 py-1.5 rounded-full text-xs font-bold border border-white/20 bg-black/50 text-white/80">
-                          {phaseLabel}
-                        </div>
-
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
-
-                        {isActive && (
-                          <div className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/60 border border-white/10 text-xs text-white/80">
-                            <span className="text-cyan-400">&#9201;</span>
-                            {formatTimeRemaining(auction.timeRemaining)}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="p-3.5">
-                        <div className="flex items-start gap-2.5">
-                          <div className="flex-1 min-w-0">
-                            <div className="font-black text-gray-200 leading-tight truncate">
-                              {auction.title || `Property #${Number(auction.tokenId)}`}
-                            </div>
-                            <div className="mt-1.5 text-xs text-gray-400 truncate">
-                              {auction.location || shortAddr(auction.address)}
-                            </div>
-                          </div>
-
-                          <div className="px-2.5 py-2 rounded-xl border border-cyan-400/25 bg-cyan-400/[0.06] text-cyan-400 font-black text-xs whitespace-nowrap">
-                            ${formatUsdc(auction.currentHighBid > 0n ? auction.currentHighBid : auction.floorPrice)}
-                          </div>
-                        </div>
-
-                        <div className="mt-3 flex gap-2 text-xs text-gray-400">
-                          <div className="flex-1 px-2 py-1.5 rounded-lg border border-white/[0.08] bg-black/25 text-center">
-                            <span className="text-white/70">{auction.bidderCount}</span> bidders
-                          </div>
-                          <div className="flex-1 px-2 py-1.5 rounded-lg border border-white/[0.08] bg-black/25 text-center truncate">
-                            Leader: <span className="text-cyan-400">{shortAddr(auction.currentLeader)}</span>
-                          </div>
-                        </div>
-
-                        <div className="mt-3">
-                          <PhaseProgressBar phase={auction.currentPhase} variant="compact" />
-                        </div>
-
-                        <div className="mt-3 flex gap-2.5">
-                          <div className="flex-1 px-3 py-2.5 rounded-xl border border-white/10 bg-white/[0.03] text-gray-200 font-bold text-center text-sm hover:bg-white/[0.06] transition-colors">
-                            {isActive ? "Place Bid" : "View Details"}
-                          </div>
-                        </div>
-                      </div>
-                    </article>
+                    <PropertyCard
+                      variant="compact"
+                      metadata={auction.metadata ?? null}
+                      currentPhase={auction.currentPhase}
+                      tokenId={auction.tokenId}
+                      auctionAddress={auction.address}
+                      auctionData={{
+                        floorPrice: auction.floorPrice,
+                        currentHighBid: auction.currentHighBid,
+                        currentLeader: auction.currentLeader,
+                        bidderCount: auction.bidderCount,
+                        timeRemaining: auction.timeRemaining,
+                        finalized: auction.finalized,
+                        paused: auction.paused,
+                      }}
+                      fallbackImage={auction.image || FALLBACK_IMAGE}
+                    />
                   </Link>
-                );
-              })}
+              ))}
 
               {filtered.length === 0 && (
                 <div className="col-span-full p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-gray-400 text-center">
@@ -611,42 +567,6 @@ export default function AuctionsPage() {
         </div>
       </section>
 
-      {showStreamCard && filtered.length > 0 && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
-          <div className="w-[280px] h-[280px] rounded-2xl border border-white/[0.12] bg-[#080808]/90 shadow-[0_20px_60px_rgba(0,0,0,0.5)] p-3.5 flex flex-col gap-3 relative pointer-events-auto">
-            <button
-              type="button"
-              className="absolute top-2 right-2 w-7 h-7 rounded-full border border-white/20 bg-white/[0.08] text-white text-lg leading-none cursor-pointer hover:bg-white/[0.15]"
-              onClick={() => {
-                setShowStreamCard(false);
-                setLiveExploded(true);
-              }}
-            >
-              ×
-            </button>
-            <div className="flex-1 rounded-xl border border-white/[0.12] bg-gradient-to-br from-cyan-400/20 to-red-500/20 flex items-center justify-center text-white font-bold relative overflow-hidden">
-              <video
-                src="/steam/kling_20260208_Image_to_Video_Animate_th_3148_0_2.mp4"
-                autoPlay
-                muted
-                loop
-                playsInline
-                className="absolute inset-0 w-full h-full object-cover z-[1]"
-                style={{ filter: "saturate(1.05)" }}
-              />
-              <div className="z-[2] px-3 py-2 rounded-full bg-black/60 border border-white/20 text-xs">
-                Live auction starting
-              </div>
-            </div>
-            <Link
-              href={`/biddings?auction=${filtered[0].address}`}
-              className="rounded-xl border border-cyan-400/40 bg-cyan-400/15 text-cyan-400 font-bold px-3 py-2.5 cursor-pointer text-center no-underline hover:bg-cyan-400/25 transition-colors"
-            >
-              Join Auction →
-            </Link>
-          </div>
-        </div>
-      )}
 
       <style jsx>{`
         @media (max-width: 980px) {

@@ -221,7 +221,7 @@ export default function AdminPage() {
               { address: auctionAddr, abi: auctionAbi, functionName: "currentHighBid" },
               { address: auctionAddr, abi: auctionAbi, functionName: "floorPrice" },
               { address: auctionAddr, abi: auctionAbi, functionName: "participationFee" },
-              { address: auctionAddr, abi: auctionAbi, functionName: "minBidIncrement" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "minBidIncrementPercent" },
               { address: auctionAddr, abi: auctionAbi, functionName: "winner" },
               { address: auctionAddr, abi: auctionAbi, functionName: "finalized" },
               { address: auctionAddr, abi: auctionAbi, functionName: "paused" },
