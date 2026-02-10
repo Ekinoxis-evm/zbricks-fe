@@ -1,54 +1,48 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ethers } from "ethers";
+import { createPublicClient, http } from "viem";
+import { baseSepolia, base } from "viem/chains";
+import { houseNftAbi, getContractsForChain } from "@/lib/contracts";
 import Header from "../components/Header";
 import PhaseProgressBar from "../components/PhaseProgressBar";
+import type { Address } from "viem";
 
 // ============ CONSTANTS ============
 
 const DEFAULT_RPC_BY_CHAIN: Record<number, string> = {
   84532: "https://sepolia.base.org",
   8453: "https://mainnet.base.org",
-  5042002: "https://rpc.testnet.arc.network",
 };
 
+const CHAIN_MAP: Record<number, typeof baseSepolia> = {
+  84532: baseSepolia,
+  8453: base,
+};
+
+// Only allow chains from addresses.json
 const CHAIN_DEPLOYMENTS: Record<
   number,
   {
     chainId: number;
     chainName: string;
     explorer: string;
-    contracts: { HouseNFT: string };
+    contracts: { HouseNFT: Address };
   }
 > = {
   8453: {
     chainId: 8453,
     chainName: "Base Mainnet",
     explorer: "https://base.blockscout.com",
-    contracts: { HouseNFT: "0x44b659c474d1bcb0e6325ae17c882994d772e471" },
+    contracts: { HouseNFT: getContractsForChain(8453).HouseNFT },
   },
   84532: {
     chainId: 84532,
     chainName: "Base Sepolia",
     explorer: "https://base-sepolia.blockscout.com",
-    contracts: { HouseNFT: "0x3911826c047726de1881f5518faa06e06413aba6" },
-  },
-  5042002: {
-    chainId: 5042002,
-    chainName: "Arc Testnet",
-    explorer: "https://testnet.arcscan.app",
-    contracts: { HouseNFT: "0x6bb77d0b235d4d27f75ae0e3a4f465bf8ac91c0b" },
+    contracts: { HouseNFT: getContractsForChain(84532).HouseNFT },
   },
 };
-
-const HOUSE_NFT_ABI = [
-  "function nextTokenId() view returns (uint256)",
-  "function tokenPhase(uint256) view returns (uint8)",
-  "function ownerOf(uint256) view returns (address)",
-  "function tokenURI(uint256) view returns (string)",
-  "function getPhaseURI(uint256,uint8) view returns (string)",
-];
 
 const IPFS_GATEWAY = "https://gateway.pinata.cloud/ipfs/";
 
@@ -97,31 +91,31 @@ export default function PropertiesPage() {
     const envKey: Record<number, string | undefined> = {
       84532: process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL,
       8453: process.env.NEXT_PUBLIC_BASE_MAINNET_RPC_URL,
-      5042002: process.env.NEXT_PUBLIC_ARC_TESTNET_RPC_URL,
     };
     return envKey[selectedChainId] ?? DEFAULT_RPC_BY_CHAIN[selectedChainId];
   }, [selectedChainId]);
 
-  const rpcProvider = useMemo(
-    () => (rpcUrl ? new ethers.JsonRpcProvider(rpcUrl) : null),
-    [rpcUrl]
-  );
+  const publicClient = useMemo(() => {
+    if (!rpcUrl) return null;
+    const chain = CHAIN_MAP[selectedChainId] ?? baseSepolia;
+    return createPublicClient({ chain, transport: http(rpcUrl) });
+  }, [rpcUrl, selectedChainId]);
 
   const fetchTokens = useCallback(async () => {
-    if (!rpcProvider) return;
+    if (!publicClient) return;
     setLoading(true);
     setError("");
     setTokens([]);
 
     try {
-      const nft = new ethers.Contract(
-        chainConfig.contracts.HouseNFT,
-        HOUSE_NFT_ABI,
-        rpcProvider
-      );
-      const nextId = Number(await nft.nextTokenId());
+      const nextId = await publicClient.readContract({
+        address: chainConfig.contracts.HouseNFT,
+        abi: houseNftAbi,
+        functionName: "nextTokenId",
+      });
 
-      if (nextId <= 1) {
+      const nextIdNum = Number(nextId);
+      if (nextIdNum <= 1) {
         setTokens([]);
         setLoading(false);
         return;
@@ -129,26 +123,31 @@ export default function PropertiesPage() {
 
       const results: TokenData[] = [];
 
-      for (let id = 1; id < nextId; id++) {
+      for (let id = 1; id < nextIdNum; id++) {
         try {
-          const [phase, owner, uri] = await Promise.all([
-            nft.tokenPhase(id),
-            nft.ownerOf(id),
-            nft.tokenURI(id).catch(() => ""),
-          ]);
-
-          const phaseURIs = await Promise.all(
-            [0, 1, 2, 3].map((p) =>
-              nft.getPhaseURI(id, p).catch(() => "")
-            )
-          );
+          const tokenResults = await publicClient.multicall({
+            contracts: [
+              { address: chainConfig.contracts.HouseNFT, abi: houseNftAbi, functionName: "tokenPhase", args: [BigInt(id)] },
+              { address: chainConfig.contracts.HouseNFT, abi: houseNftAbi, functionName: "ownerOf", args: [BigInt(id)] },
+              { address: chainConfig.contracts.HouseNFT, abi: houseNftAbi, functionName: "tokenURI", args: [BigInt(id)] },
+              { address: chainConfig.contracts.HouseNFT, abi: houseNftAbi, functionName: "getPhaseURI", args: [BigInt(id), 0] },
+              { address: chainConfig.contracts.HouseNFT, abi: houseNftAbi, functionName: "getPhaseURI", args: [BigInt(id), 1] },
+              { address: chainConfig.contracts.HouseNFT, abi: houseNftAbi, functionName: "getPhaseURI", args: [BigInt(id), 2] },
+              { address: chainConfig.contracts.HouseNFT, abi: houseNftAbi, functionName: "getPhaseURI", args: [BigInt(id), 3] },
+            ],
+          });
 
           results.push({
             tokenId: id,
-            phase: Number(phase),
-            owner,
-            tokenURI: uri,
-            phaseURIs,
+            phase: tokenResults[0].result != null ? Number(tokenResults[0].result) : 0,
+            owner: (tokenResults[1].result as string) ?? "",
+            tokenURI: (tokenResults[2].result as string) ?? "",
+            phaseURIs: [
+              (tokenResults[3].result as string) ?? "",
+              (tokenResults[4].result as string) ?? "",
+              (tokenResults[5].result as string) ?? "",
+              (tokenResults[6].result as string) ?? "",
+            ],
           });
         } catch {
           // Token may not exist
@@ -161,7 +160,7 @@ export default function PropertiesPage() {
     } finally {
       setLoading(false);
     }
-  }, [rpcProvider, chainConfig]);
+  }, [publicClient, chainConfig]);
 
   useEffect(() => {
     fetchTokens();
@@ -169,7 +168,7 @@ export default function PropertiesPage() {
 
   async function fetchMetadataPreview(tokenId: number, phaseIdx: number, uri: string) {
     const key = `${tokenId}-${phaseIdx}`;
-    if (previews[key]?.data) return; // already loaded
+    if (previews[key]?.data) return;
 
     setPreviews((p) => ({
       ...p,
@@ -204,7 +203,6 @@ export default function PropertiesPage() {
       <Header />
 
       <div className="mx-auto max-w-5xl px-6 py-8">
-        {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold">Properties</h1>
@@ -236,13 +234,20 @@ export default function PropertiesPage() {
           </div>
         </div>
 
-        {/* Contract info */}
         <div className="mb-6 rounded-xl border border-white/10 bg-white/[0.02] p-4 text-sm">
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <span className="text-white/50">HouseNFT Contract</span>
-            <span className="font-mono text-cyan-400">
+            <a
+              href={`${chainConfig.explorer}/address/${chainConfig.contracts.HouseNFT}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-cyan-400 hover:underline flex items-center gap-1"
+            >
               {shorten(chainConfig.contracts.HouseNFT)}
-            </span>
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
           </div>
           <div className="flex justify-between mt-2">
             <span className="text-white/50">Tokens Minted</span>
@@ -250,28 +255,24 @@ export default function PropertiesPage() {
           </div>
         </div>
 
-        {/* Error */}
         {error && (
           <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
             {error}
           </div>
         )}
 
-        {/* Loading */}
         {loading && (
           <div className="text-center py-16 text-white/50">
             Loading tokens from chain...
           </div>
         )}
 
-        {/* Empty state */}
         {!loading && tokens.length === 0 && !error && (
           <div className="text-center py-16 text-white/40">
             No tokens minted yet on {chainConfig.chainName}.
           </div>
         )}
 
-        {/* Token grid */}
         <div className="grid gap-4 md:grid-cols-2">
           {tokens.map((token) => {
             const isExpanded = expandedToken === token.tokenId;
@@ -280,7 +281,6 @@ export default function PropertiesPage() {
                 key={token.tokenId}
                 className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden"
               >
-                {/* Card header */}
                 <div className="p-5">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-bold">Token #{token.tokenId}</h3>
@@ -289,7 +289,6 @@ export default function PropertiesPage() {
                     </span>
                   </div>
 
-                  {/* Phase progress bar */}
                   <PhaseProgressBar phase={token.phase} variant="expanded" />
 
                   <div className="mt-4 grid gap-2 text-sm">
@@ -305,7 +304,6 @@ export default function PropertiesPage() {
                     </div>
                   </div>
 
-                  {/* Expand/collapse */}
                   <button
                     onClick={() =>
                       setExpandedToken(isExpanded ? null : token.tokenId)
@@ -316,7 +314,6 @@ export default function PropertiesPage() {
                   </button>
                 </div>
 
-                {/* Expanded: Phase URIs */}
                 {isExpanded && (
                   <div className="border-t border-white/10 p-5 space-y-3">
                     {token.phaseURIs.map((uri, idx) => {
@@ -376,7 +373,6 @@ export default function PropertiesPage() {
                                 </button>
                               </div>
 
-                              {/* Inline preview */}
                               {preview?.error && (
                                 <div className="mt-2 text-xs text-red-300">
                                   {preview.error}

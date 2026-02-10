@@ -1,0 +1,24 @@
+{
+  "8453": {
+    "chainId": 8453,
+    "chainName": "Base Mainnet",
+    "explorer": "https://base.blockscout.com",
+    "timestamp": "2026-02-09T21:37:04.762Z",
+    "contracts": {
+      "HouseNFT": "0x776b8158269fbd7fd6a91a0514b8850777ac0227",
+      "AuctionFactory": "0x3347f6a853e04281daa0314f49a76964f010366f",
+      "AuctionManager": "0x24220aeb9360aaf896c99060c53332258736e30d"
+    }
+  },
+  "84532": {
+    "chainId": 84532,
+    "chainName": "Base Sepolia",
+    "explorer": "https://base-sepolia.blockscout.com",
+    "timestamp": "2026-02-09T21:37:04.767Z",
+    "contracts": {
+      "HouseNFT": "0x2452791d09506e21eb2936f5748c5006965fb325",
+      "AuctionFactory": "0x9be95601c0b39705170b2424821aaab437be181c",
+      "AuctionManager": "0x4aee0c5afe353fb9fa111e0b5221db715b53cb10"
+    }
+  }
+}

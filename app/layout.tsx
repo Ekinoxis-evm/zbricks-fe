@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Providers from "./providers";
 
 export const metadata: Metadata = {
   title: "ZBrick - Real Estate Auctions On-Chain",
@@ -13,7 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased bg-[#030712]">{children}</body>
+      <body className="antialiased bg-[#030712]">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

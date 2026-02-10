@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useAccount, useChainId } from "wagmi";
+import { ConnectButton, WalletButton } from "@rainbow-me/rainbowkit";
+import { baseSepolia, base } from "wagmi/chains";
 
 type NavItem = {
   label: string;
@@ -10,22 +13,17 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { label: "Auctions", href: "/marketplace" },
+  { label: "Auctions", href: "/auctions" },
   { label: "Properties", href: "/properties" },
-  { label: "My Account", href: "/cuenta" },
+  { label: "My Account", href: "/account" },
   { label: "Admin", href: "/admin" },
 ];
 
 export default function Header() {
   const pathname = usePathname();
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
   const [isScrolled, setIsScrolled] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setWalletAddress(window.localStorage.getItem("w3s_wallet_address"));
-    }
-  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -36,6 +34,10 @@ export default function Header() {
   }, []);
 
   const isActive = (href: string) => pathname === href;
+
+  // Get chain info
+  const chainName = chainId === 8453 ? "Base" : chainId === 84532 ? "Base Sepolia" : "Unknown";
+  const isBaseNetwork = chainId === 8453 || chainId === 84532;
 
   return (
     <header
@@ -143,58 +145,129 @@ export default function Header() {
 
         <div style={{ flex: 1 }} />
 
-        {/* Auth / User */}
-        {walletAddress ? (
-          <Link
-            href="/cuenta"
+        {/* Chain Indicator */}
+        {isConnected && isBaseNetwork && (
+          <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
-              padding: "8px 14px",
+              gap: 6,
+              padding: "6px 12px",
               borderRadius: 999,
-              border: "1px solid rgba(103,232,249,0.3)",
-              background: "rgba(103,232,249,0.08)",
-              textDecoration: "none",
+              background: "rgba(45,212,212,0.1)",
+              border: "1px solid rgba(45,212,212,0.2)",
+              fontSize: 11,
               color: "#67e8f9",
-              fontSize: 13,
               fontWeight: 600,
             }}
           >
             <div
               style={{
-                width: 8,
-                height: 8,
+                width: 6,
+                height: 6,
                 borderRadius: "50%",
                 background: "#22c55e",
               }}
             />
-            {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-          </Link>
-        ) : (
-          <Link
-            href="/auth"
+            {chainName}
+          </div>
+        )}
+
+        {/* Network Warning */}
+        {isConnected && !isBaseNetwork && (
+          <div
             style={{
-              padding: "10px 20px",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
               borderRadius: 999,
-              background: "#2DD4D4",
-              color: "#0f172a",
-              fontSize: 13,
-              fontWeight: 700,
-              textDecoration: "none",
-              transition: "transform 150ms ease, box-shadow 150ms ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-1px)";
-              e.currentTarget.style.boxShadow = "0 4px 20px rgba(45,212,212,0.3)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow = "none";
+              background: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              fontSize: 11,
+              color: "#ef4444",
+              fontWeight: 600,
             }}
           >
-            Sign In
-          </Link>
+            <div
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: "#ef4444",
+              }}
+            />
+            Wrong Network
+          </div>
+        )}
+
+        {/* Auth / User */}
+        {isConnected && address ? (
+          <ConnectButton.Custom>
+            {({ account, openAccountModal }) => (
+              <button
+                onClick={openAccountModal}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 14px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(103,232,249,0.3)",
+                  background: "rgba(103,232,249,0.08)",
+                  textDecoration: "none",
+                  color: "#67e8f9",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: "#22c55e",
+                  }}
+                />
+                {account?.displayName}
+              </button>
+            )}
+          </ConnectButton.Custom>
+        ) : (
+          <WalletButton.Custom wallet="baseAccount">
+            {({ ready, connect }) => (
+              <button
+                onClick={connect}
+                disabled={!ready}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: 999,
+                  background: "#2DD4D4",
+                  color: "#0f172a",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  textDecoration: "none",
+                  transition: "transform 150ms ease, box-shadow 150ms ease",
+                  border: "none",
+                  cursor: ready ? "pointer" : "not-allowed",
+                  opacity: ready ? 1 : 0.6,
+                }}
+                onMouseEnter={(e) => {
+                  if (ready) {
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                    e.currentTarget.style.boxShadow = "0 4px 20px rgba(45,212,212,0.3)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
+              >
+                Sign In
+              </button>
+            )}
+          </WalletButton.Custom>
         )}
       </div>
     </header>

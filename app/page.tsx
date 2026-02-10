@@ -88,7 +88,7 @@ export default function HomePage() {
           {/* CTA */}
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <Link
-              href="/auth"
+              href="/auctions"
               style={{
                 padding: "14px 28px",
                 borderRadius: 14,
@@ -114,7 +114,7 @@ export default function HomePage() {
               </svg>
             </Link>
             <Link
-              href="/marketplace"
+              href="/auctions"
               style={{
                 padding: "14px 28px",
                 borderRadius: 14,
@@ -126,7 +126,7 @@ export default function HomePage() {
                 textDecoration: "none",
               }}
             >
-              View Marketplace
+              View Auctions
             </Link>
           </div>
 
@@ -146,8 +146,8 @@ export default function HomePage() {
             />
             <FeatureCard
               icon={<WalletIcon />}
-              title="Circle Wallets"
-              description="Secure, non-custodial wallets with email or social login. No seed phrases."
+              title="Base Account"
+              description="Sign in with your passkey. No seed phrases, no extensions."
             />
             <FeatureCard
               icon={<PhaseIcon />}
@@ -198,34 +198,6 @@ export default function HomePage() {
                 B
               </div>
               Base
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                color: "rgba(255,255,255,0.6)",
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-            >
-              <div
-                style={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: "50%",
-                  background: "#00D395",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: "white",
-                }}
-              >
-                C
-              </div>
-              Circle
             </div>
             <div
               style={{

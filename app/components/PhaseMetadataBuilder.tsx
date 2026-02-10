@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // ============ TYPES ============
 
@@ -367,6 +367,9 @@ export default function PhaseMetadataBuilder({
     gatewayUrl: string;
     name: string;
   } | null>(null);
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const [uploadSuccessKey, setUploadSuccessKey] = useState<string | null>(null);
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
     if (singlePhase !== undefined) {
@@ -415,6 +418,32 @@ export default function PhaseMetadataBuilder({
 
   function setDocumentValue(key: string, value: string) {
     setMeta((m) => ({ ...m, documents: { ...m.documents, [key]: value } }));
+  }
+
+  async function uploadFileForKey(key: string, type: "media" | "document", file: File) {
+    setUploadingKey(key);
+    setUploadSuccessKey(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("name", `${key}_${file.name}`);
+      const res = await fetch("/api/pinata/file", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Upload failed");
+      const uri = data.ipfsUrl as string;
+      if (type === "media") setMediaValue(key, uri);
+      else setDocumentValue(key, uri);
+      setUploadSuccessKey(key);
+      setTimeout(() => setUploadSuccessKey((cur) => (cur === key ? null : cur)), 2000);
+    } catch {
+      // silently reset – the field stays empty so user can retry
+    } finally {
+      setUploadingKey(null);
+    }
+  }
+
+  function triggerFileInput(key: string) {
+    fileInputRefs.current[key]?.click();
   }
 
   // ---- Phase toggling ----
@@ -639,6 +668,8 @@ export default function PhaseMetadataBuilder({
     const picked = phase.mediaKeys.includes(k);
     const val = meta.media[k] || "";
     const isEmpty = !val;
+    const isUploading = uploadingKey === k;
+    const isSuccess = uploadSuccessKey === k;
 
     return (
       <div
@@ -662,16 +693,42 @@ export default function PhaseMetadataBuilder({
             {picked ? "Included" : "Add"}
           </button>
         </div>
-        <input
-          className={clsx(
-            "mt-1 w-full rounded-lg border bg-neutral-950/40 px-3 py-1.5 text-xs outline-none focus:border-emerald-500/60",
-            isEmpty ? "border-amber-500/30" : "border-neutral-800"
-          )}
-          value={val}
-          onChange={(e) => setMediaValue(k, e.target.value)}
-          placeholder="ipfs://..."
-        />
-        {isEmpty && <div className="mt-0.5 text-[10px] text-amber-400/60">Value not set</div>}
+        <div className="mt-1 flex gap-1">
+          <input
+            className={clsx(
+              "min-w-0 flex-1 rounded-lg border bg-neutral-950/40 px-3 py-1.5 text-xs outline-none focus:border-emerald-500/60",
+              isEmpty ? "border-amber-500/30" : "border-neutral-800"
+            )}
+            value={val}
+            onChange={(e) => setMediaValue(k, e.target.value)}
+            placeholder="ipfs://..."
+          />
+          <input
+            type="file"
+            className="hidden"
+            ref={(el) => { fileInputRefs.current[k] = el; }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) uploadFileForKey(k, "media", f);
+              e.target.value = "";
+            }}
+          />
+          <button
+            onClick={() => triggerFileInput(k)}
+            disabled={isUploading}
+            className={clsx(
+              "shrink-0 rounded-lg px-2 py-1.5 text-[11px] transition",
+              isSuccess
+                ? "bg-emerald-600 text-white"
+                : "bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50"
+            )}
+            title="Upload file to IPFS"
+          >
+            {isUploading ? "..." : isSuccess ? "\u2713" : "\u2191"}
+          </button>
+        </div>
+        {isEmpty && !isUploading && <div className="mt-0.5 text-[10px] text-amber-400/60">Value not set</div>}
+        {isUploading && <div className="mt-0.5 text-[10px] text-blue-400/80">Uploading to IPFS...</div>}
       </div>
     );
   }
@@ -681,6 +738,8 @@ export default function PhaseMetadataBuilder({
     const picked = phase.documentKeys.includes(k);
     const val = meta.documents[k] || "";
     const isEmpty = !val;
+    const isUploading = uploadingKey === k;
+    const isSuccess = uploadSuccessKey === k;
 
     return (
       <div
@@ -704,16 +763,42 @@ export default function PhaseMetadataBuilder({
             {picked ? "Included" : "Add"}
           </button>
         </div>
-        <input
-          className={clsx(
-            "mt-1 w-full rounded-lg border bg-neutral-950/40 px-3 py-1.5 text-xs outline-none focus:border-cyan-500/60",
-            isEmpty ? "border-amber-500/30" : "border-neutral-800"
-          )}
-          value={val}
-          onChange={(e) => setDocumentValue(k, e.target.value)}
-          placeholder="ipfs://..."
-        />
-        {isEmpty && <div className="mt-0.5 text-[10px] text-amber-400/60">Value not set</div>}
+        <div className="mt-1 flex gap-1">
+          <input
+            className={clsx(
+              "min-w-0 flex-1 rounded-lg border bg-neutral-950/40 px-3 py-1.5 text-xs outline-none focus:border-cyan-500/60",
+              isEmpty ? "border-amber-500/30" : "border-neutral-800"
+            )}
+            value={val}
+            onChange={(e) => setDocumentValue(k, e.target.value)}
+            placeholder="ipfs://..."
+          />
+          <input
+            type="file"
+            className="hidden"
+            ref={(el) => { fileInputRefs.current[k] = el; }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) uploadFileForKey(k, "document", f);
+              e.target.value = "";
+            }}
+          />
+          <button
+            onClick={() => triggerFileInput(k)}
+            disabled={isUploading}
+            className={clsx(
+              "shrink-0 rounded-lg px-2 py-1.5 text-[11px] transition",
+              isSuccess
+                ? "bg-emerald-600 text-white"
+                : "bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50"
+            )}
+            title="Upload file to IPFS"
+          >
+            {isUploading ? "..." : isSuccess ? "\u2713" : "\u2191"}
+          </button>
+        </div>
+        {isEmpty && !isUploading && <div className="mt-0.5 text-[10px] text-amber-400/60">Value not set</div>}
+        {isUploading && <div className="mt-0.5 text-[10px] text-blue-400/80">Uploading to IPFS...</div>}
       </div>
     );
   }
@@ -722,7 +807,7 @@ export default function PhaseMetadataBuilder({
   function renderCategoryGroup(title: string, items: React.ReactNode[], color: string) {
     if (!items.length) return null;
     return (
-      <div className="mt-3 first:mt-0">
+      <div key={title} className="mt-3 first:mt-0">
         <div className={clsx("text-[11px] font-semibold mb-1.5", color)}>{title}</div>
         <div className="grid gap-1.5">{items}</div>
       </div>
@@ -879,6 +964,8 @@ export default function PhaseMetadataBuilder({
                     filtered.map((k) => {
                       const picked = phase.mediaKeys.includes(k);
                       const val = meta.media[k] || "";
+                      const isUploadingK = uploadingKey === k;
+                      const isSuccessK = uploadSuccessKey === k;
                       return (
                         <div key={k} className={clsx(
                           "rounded-lg border px-2 py-1.5 text-xs",
@@ -893,12 +980,38 @@ export default function PhaseMetadataBuilder({
                               {picked ? "On" : "Add"}
                             </button>
                           </div>
-                          <input
-                            className="mt-1 w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] outline-none focus:border-cyan-500/50"
-                            value={val}
-                            onChange={(e) => setMediaValue(k, e.target.value)}
-                            placeholder="ipfs://..."
-                          />
+                          <div className="mt-1 flex gap-1">
+                            <input
+                              className="min-w-0 flex-1 rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] outline-none focus:border-cyan-500/50"
+                              value={val}
+                              onChange={(e) => setMediaValue(k, e.target.value)}
+                              placeholder="ipfs://..."
+                            />
+                            <input
+                              type="file"
+                              className="hidden"
+                              ref={(el) => { fileInputRefs.current[`c_${k}`] = el; }}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) uploadFileForKey(k, "media", f);
+                                e.target.value = "";
+                              }}
+                            />
+                            <button
+                              onClick={() => fileInputRefs.current[`c_${k}`]?.click()}
+                              disabled={isUploadingK}
+                              className={clsx(
+                                "shrink-0 rounded px-1.5 py-1 text-[10px] transition",
+                                isSuccessK
+                                  ? "bg-emerald-600 text-white"
+                                  : "bg-white/10 hover:bg-white/20 disabled:opacity-50"
+                              )}
+                              title="Upload file to IPFS"
+                            >
+                              {isUploadingK ? "..." : isSuccessK ? "\u2713" : "\u2191"}
+                            </button>
+                          </div>
+                          {isUploadingK && <div className="mt-0.5 text-[10px] text-blue-400/80">Uploading...</div>}
                         </div>
                       );
                     }),
@@ -915,6 +1028,8 @@ export default function PhaseMetadataBuilder({
                     filtered.map((k) => {
                       const picked = phase.documentKeys.includes(k);
                       const val = meta.documents[k] || "";
+                      const isUploadingK = uploadingKey === k;
+                      const isSuccessK = uploadSuccessKey === k;
                       return (
                         <div key={k} className={clsx(
                           "rounded-lg border px-2 py-1.5 text-xs",
@@ -929,12 +1044,38 @@ export default function PhaseMetadataBuilder({
                               {picked ? "On" : "Add"}
                             </button>
                           </div>
-                          <input
-                            className="mt-1 w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] outline-none focus:border-cyan-500/50"
-                            value={val}
-                            onChange={(e) => setDocumentValue(k, e.target.value)}
-                            placeholder="ipfs://..."
-                          />
+                          <div className="mt-1 flex gap-1">
+                            <input
+                              className="min-w-0 flex-1 rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] outline-none focus:border-cyan-500/50"
+                              value={val}
+                              onChange={(e) => setDocumentValue(k, e.target.value)}
+                              placeholder="ipfs://..."
+                            />
+                            <input
+                              type="file"
+                              className="hidden"
+                              ref={(el) => { fileInputRefs.current[`c_${k}`] = el; }}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) uploadFileForKey(k, "document", f);
+                                e.target.value = "";
+                              }}
+                            />
+                            <button
+                              onClick={() => fileInputRefs.current[`c_${k}`]?.click()}
+                              disabled={isUploadingK}
+                              className={clsx(
+                                "shrink-0 rounded px-1.5 py-1 text-[10px] transition",
+                                isSuccessK
+                                  ? "bg-emerald-600 text-white"
+                                  : "bg-white/10 hover:bg-white/20 disabled:opacity-50"
+                              )}
+                              title="Upload file to IPFS"
+                            >
+                              {isUploadingK ? "..." : isSuccessK ? "\u2713" : "\u2191"}
+                            </button>
+                          </div>
+                          {isUploadingK && <div className="mt-0.5 text-[10px] text-blue-400/80">Uploading...</div>}
                         </div>
                       );
                     }),

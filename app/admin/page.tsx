@@ -1,127 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ethers } from "ethers";
-import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAccount, useWriteContract } from "wagmi";
+import { isAddress, parseUnits, formatUnits, createPublicClient, http } from "viem";
+import { auctionAbi, erc20Abi, houseNftAbi, factoryAbi } from "@/lib/contracts";
+import { useChainSync, ChainMismatchWarning } from "@/lib/hooks/useChainSync";
 import Header from "../components/Header";
 import PhaseProgressBar from "../components/PhaseProgressBar";
 import PhaseMetadataBuilder from "../components/PhaseMetadataBuilder";
-
-// ============ CONSTANTS ============
-
-const DEFAULT_RPC_BY_CHAIN: Record<number, string> = {
-  84532: "https://sepolia.base.org",
-  8453: "https://mainnet.base.org",
-  5042002: "https://rpc.testnet.arc.network",
-};
-
-const CHAIN_DEPLOYMENTS: Record<
-  number,
-  {
-    chainId: number;
-    chainName: string;
-    explorer: string;
-    contracts: {
-      HouseNFT: string;
-      AuctionFactory: string;
-      AuctionManager: string;
-    };
-    usdc: string;
-  }
-> = {
-  8453: {
-    chainId: 8453,
-    chainName: "Base Mainnet",
-    explorer: "https://base.blockscout.com",
-    contracts: {
-      HouseNFT: "0x44b659c474d1bcb0e6325ae17c882994d772e471",
-      AuctionFactory: "0x1d5854ef9b5fd15e1f477a7d15c94ea0e795d9a5",
-      AuctionManager: "0x24220aeb9360aaf896c99060c53332258736e30d",
-    },
-    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  },
-  84532: {
-    chainId: 84532,
-    chainName: "Base Sepolia",
-    explorer: "https://base-sepolia.blockscout.com",
-    contracts: {
-      HouseNFT: "0x3911826c047726de1881f5518faa06e06413aba6",
-      AuctionFactory: "0xd13e24354d6e9706b4bc89272e31374ec71a2e75",
-      AuctionManager: "0x4aee0c5afe353fb9fa111e0b5221db715b53cb10",
-    },
-    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-  },
-  5042002: {
-    chainId: 5042002,
-    chainName: "Arc Testnet",
-    explorer: "https://testnet.arcscan.app",
-    contracts: {
-      HouseNFT: "0x6bb77d0b235d4d27f75ae0e3a4f465bf8ac91c0b",
-      AuctionFactory: "0x88cc60b8a6161758b176563c78abeb7495d664d1",
-      AuctionManager: "0x2fbaed3a30a53bd61676d9c5f46db5a73f710f53",
-    },
-    usdc: "0x3600000000000000000000000000000000000000",
-  },
-};
-
-// ============ ABIs ============
-
-const HOUSE_NFT_ABI = [
-  "function admin() view returns (address)",
-  "function nextTokenId() view returns (uint256)",
-  "function tokenPhase(uint256) view returns (uint8)",
-  "function tokenController(uint256) view returns (address)",
-  "function ownerOf(uint256) view returns (address)",
-  "function tokenURI(uint256) view returns (string)",
-  "function getPhaseURI(uint256,uint8) view returns (string)",
-  "function mintTo(address) returns (uint256)",
-  "function setController(uint256,address)",
-  "function setPhaseURIs(uint256,string[4])",
-  "function updatePhaseURI(uint256,uint8,string)",
-  "function advancePhase(uint256)",
-  "function transferAdmin(address)",
-  "function safeTransferFrom(address,address,uint256)",
-];
-
-const FACTORY_ABI = [
-  "function owner() view returns (address)",
-  "function getAuctions() view returns (address[])",
-  "function getAuctionCount() view returns (uint256)",
-  "function createAuction(address,address,address,uint256,uint256[4],uint256,uint256,bool,uint256,address) returns (address)",
-];
-
-const AUCTION_ABI = [
-  "function owner() view returns (address)",
-  "function paymentToken() view returns (address)",
-  "function nftContract() view returns (address)",
-  "function tokenId() view returns (uint256)",
-  "function floorPrice() view returns (uint256)",
-  "function participationFee() view returns (uint256)",
-  "function minBidIncrement() view returns (uint256)",
-  "function currentPhase() view returns (uint8)",
-  "function currentLeader() view returns (address)",
-  "function currentHighBid() view returns (uint256)",
-  "function winner() view returns (address)",
-  "function finalized() view returns (bool)",
-  "function paused() view returns (bool)",
-  "function userBids(address) view returns (uint256)",
-  "function getTimeRemaining() view returns (uint256)",
-  "function getBidderCount() view returns (uint256)",
-  "function advancePhase()",
-  "function finalizeAuction()",
-  "function withdrawProceeds()",
-  "function emergencyWithdrawNFT(address)",
-  "function pause()",
-  "function unpause()",
-];
-
-const ERC20_ABI = [
-  "function symbol() view returns (string)",
-  "function decimals() view returns (uint8)",
-  "function balanceOf(address) view returns (uint256)",
-  "function allowance(address,address) view returns (uint256)",
-  "function approve(address,uint256)",
-];
 
 // ============ TYPES ============
 
@@ -134,52 +20,34 @@ type Toast = {
   detail?: string;
 };
 
-type CircleWallet = {
-  id: string;
-  address: string;
-  blockchain: string;
-};
-
 // ============ HELPERS ============
 
 const shorten = (addr: string) => (addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "-");
-const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
-
-const getSessionValue = (key: string) => {
-  if (typeof window === "undefined") return null;
-  return window.sessionStorage.getItem(key) || window.localStorage.getItem(key);
-};
 
 // ============ COMPONENT ============
 
 export default function AdminPage() {
-  const [selectedChainId, setSelectedChainId] = useState<number>(84532);
-  const [hasManuallyChangedChain, setHasManuallyChangedChain] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("nft");
+  const { writeContractAsync } = useWriteContract();
+  
+  // Use chain sync hook for proper connection management
+  const {
+    activeChainId,
+    chain,
+    chainMeta,
+    contracts,
+    isConnected,
+    address: walletAddress,
+    isChainMismatch,
+    switchToChain,
+  } = useChainSync(84532); // Prefer Base Sepolia for admin
 
-  const chainConfig = CHAIN_DEPLOYMENTS[selectedChainId];
-  const rpcUrl = useMemo(() => {
-    const envKey = {
-      84532: process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL,
-      8453: process.env.NEXT_PUBLIC_BASE_MAINNET_RPC_URL,
-      5042002: process.env.NEXT_PUBLIC_ARC_TESTNET_RPC_URL,
-    }[selectedChainId];
-    return envKey ?? DEFAULT_RPC_BY_CHAIN[selectedChainId];
-  }, [selectedChainId]);
+  const hasSession = isConnected && !!walletAddress;
 
-  const rpcProvider = useMemo(
-    () => (rpcUrl ? new ethers.JsonRpcProvider(rpcUrl) : null),
-    [rpcUrl]
+  const publicClient = useMemo(
+    () => createPublicClient({ chain, transport: http(chainMeta.rpcDefault) }),
+    [chain, chainMeta.rpcDefault]
   );
-
-  // SDK & Session
-  const sdkRef = useRef<W3SSdk | null>(null);
-  const [sdkReady, setSdkReady] = useState(false);
-  const [userToken, setUserToken] = useState<string | null>(null);
-  const [encryptionKey, setEncryptionKey] = useState<string | null>(null);
-  const [walletId, setWalletId] = useState<string | null>(null);
-  const [walletAddress, setWalletAddress] = useState("");
-  const [walletBlockchain, setWalletBlockchain] = useState("");
 
   // UI
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -235,10 +103,9 @@ export default function AdminPage() {
   const [auctionBidderCount, setAuctionBidderCount] = useState<number | null>(null);
   const [emergencyWithdrawTo, setEmergencyWithdrawTo] = useState("");
 
-  const hasSession = Boolean(userToken && encryptionKey);
-  const isNftAdmin = hasSession && nftAdmin && walletAddress.toLowerCase() === nftAdmin.toLowerCase();
-  const isFactoryOwner = hasSession && factoryOwner && walletAddress.toLowerCase() === factoryOwner.toLowerCase();
-  const isAuctionOwner = hasSession && auctionOwner && walletAddress.toLowerCase() === auctionOwner.toLowerCase();
+  const isNftAdmin = hasSession && nftAdmin && walletAddress!.toLowerCase() === nftAdmin.toLowerCase();
+  const isFactoryOwner = hasSession && factoryOwner && walletAddress!.toLowerCase() === factoryOwner.toLowerCase();
+  const isAuctionOwner = hasSession && auctionOwner && walletAddress!.toLowerCase() === auctionOwner.toLowerCase();
 
   // ============ TOAST ============
 
@@ -248,207 +115,28 @@ export default function AdminPage() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
   }, []);
 
-  // ============ SESSION ============
+  // ============ CONTRACT TX HELPER ============
 
-  const restoreSession = useCallback(() => {
-    setUserToken(getSessionValue("w3s_user_token"));
-    setEncryptionKey(getSessionValue("w3s_encryption_key"));
-    setWalletId(getSessionValue("w3s_wallet_id"));
-    setWalletAddress(getSessionValue("w3s_wallet_address") ?? "");
-    setWalletBlockchain(getSessionValue("w3s_wallet_blockchain") ?? "");
-  }, []);
-
-  useEffect(() => {
-    restoreSession();
-  }, [restoreSession]);
-
-  // Auto-select chain based on wallet blockchain (only on initial load)
-  useEffect(() => {
-    if (walletBlockchain && !hasManuallyChangedChain) {
-      const blockchain = walletBlockchain.toUpperCase();
-      let matchedChainId: number | null = null;
-
-      if (blockchain.includes("ARC")) {
-        matchedChainId = 5042002;
-      } else if (blockchain.includes("BASE") && blockchain.includes("SEPOLIA")) {
-        matchedChainId = 84532;
-      } else if (blockchain.includes("BASE") && !blockchain.includes("SEPOLIA")) {
-        matchedChainId = 8453;
-      }
-
-      if (matchedChainId && matchedChainId !== selectedChainId) {
-        console.log(`Auto-selecting chain ${matchedChainId} to match wallet blockchain: ${walletBlockchain}`);
-        setSelectedChainId(matchedChainId);
-        pushToast({ 
-          type: "info", 
-          title: "Chain auto-selected", 
-          detail: `Switched to ${CHAIN_DEPLOYMENTS[matchedChainId].chainName} to match your wallet` 
-        });
-      }
-    }
-  }, [walletBlockchain, selectedChainId, hasManuallyChangedChain, pushToast]);
-
-  useEffect(() => {
-    const initSdk = () => {
-      try {
-        const sdk = new W3SSdk(
-          { appSettings: { appId } },
-          (error, result) => {
-            // SDK callback for authentication events
-            if (error) {
-              console.error('SDK auth error:', error);
-            }
-          }
-        );
-        sdkRef.current = sdk;
-        setSdkReady(true);
-      } catch (error) {
-        console.error('SDK initialization failed:', error);
-        pushToast({ type: "error", title: "SDK init failed", detail: "Please refresh the page" });
-      }
-    };
-    initSdk();
-  }, [pushToast]);
-
-  // ============ EXECUTE CHALLENGE ============
-
-  const executeChallenge = useCallback(
-    async (challengeId: string, timeout = 60000) => {
-      const sdk = sdkRef.current;
-      if (!sdk || !sdkReady) {
-        throw new Error("SDK not initialized. Please refresh the page.");
-      }
-      if (!userToken || !encryptionKey) {
-        throw new Error("Session expired. Please login again at /auth");
-      }
-
-      sdk.setAuthentication({ userToken, encryptionKey });
-
-      // Create the SDK execute promise
-      const executePromise = new Promise<{ transactionHash?: string }>((resolve, reject) => {
-        sdk.execute(challengeId, (error, result) => {
-          if (error) {
-            console.error("Circle SDK execute error:", error);
-            const errorMsg = error && typeof error === 'object' && 'message' in error
-              ? String(error.message)
-              : 'Transaction cancelled or failed';
-            reject(new Error(errorMsg));
-          } else {
-            console.log("Circle SDK execute result:", result);
-            resolve(result as { transactionHash?: string });
-          }
-        });
-      });
-
-      // Create timeout promise
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error("Transaction timeout - please check your wallet or try again"));
-        }, timeout);
-      });
-
-      // Race between execute and timeout
-      return Promise.race([executePromise, timeoutPromise]);
-    },
-    [encryptionKey, sdkReady, userToken]
-  );
-
-  // ============ CONTRACT TX ============
-
-  const runContractTx = useCallback(
-    async (label: string, contractAddress: string, abi: string[], method: string, args: unknown[] = []) => {
-      if (!userToken || !walletId || !walletAddress) {
-        pushToast({ type: "error", title: "Connect wallet first", detail: "Please sign in at /auth" });
+  const runTx = useCallback(
+    async (
+      label: string,
+      params: Parameters<typeof writeContractAsync>[0]
+    ) => {
+      if (!walletAddress) {
+        pushToast({ type: "error", title: "Connect wallet first", detail: "Please connect your wallet using the button in the header" });
         return null;
-      }
-
-      if (!encryptionKey) {
-        pushToast({ type: "error", title: "Session expired", detail: "Please sign in again at /auth" });
-        return null;
-      }
-
-      if (!sdkReady) {
-        pushToast({ type: "error", title: "SDK not ready", detail: "Please refresh the page" });
-        return null;
-      }
-
-      // Validate chain matches wallet blockchain before any transaction
-      if (walletBlockchain) {
-        const blockchain = walletBlockchain.toUpperCase();
-        let walletChainId: number | null = null;
-
-        if (blockchain.includes("ARC")) {
-          walletChainId = 5042002;
-        } else if (blockchain.includes("BASE") && blockchain.includes("SEPOLIA")) {
-          walletChainId = 84532;
-        } else if (blockchain.includes("BASE") && !blockchain.includes("SEPOLIA")) {
-          walletChainId = 8453;
-        }
-
-        if (walletChainId && walletChainId !== selectedChainId) {
-          const walletChainName = CHAIN_DEPLOYMENTS[walletChainId]?.chainName || walletBlockchain;
-          console.error(`Chain mismatch: Wallet is on ${walletChainName} (${walletChainId}), but UI shows ${chainConfig.chainName} (${selectedChainId})`);
-          pushToast({
-            type: "error",
-            title: "Chain mismatch",
-            detail: `Wallet is on ${walletChainName}, switch to ${chainConfig.chainName} or select the correct chain above.`
-          });
-          return null;
-        }
       }
 
       setIsLoading(true);
       try {
-        const iface = new ethers.Interface(abi);
-        const callData = iface.encodeFunctionData(method, args);
-
-        console.log(`[${label}] Creating contract execution challenge...`, {
-          contractAddress,
-          method,
-          args,
-          callData: callData.slice(0, 66) + '...',
-        });
-
-        const response = await fetch("/api/endpoints", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "createContractExecutionChallenge",
-            userToken,
-            walletId,
-            contractAddress,
-            callData,
-            feeLevel: "MEDIUM",
-          }),
-        });
-
-        const data = await response.json();
-        if (!response.ok) throw new Error(data?.error || "Failed to create challenge");
-
-        const challengeId = data?.challengeId;
-        if (!challengeId) throw new Error("Invalid challenge response from server");
-
-        pushToast({ type: "info", title: `${label} pending...`, detail: "Approve in the Circle modal" });
-        const result = await executeChallenge(challengeId);
-        
-        console.log(`[${label}] Challenge execution result:`, result);
-        
-        const txHash = result?.transactionHash;
-        
-        if (!txHash) {
-          console.error(`[${label}] No transaction hash received from Circle SDK`);
-          throw new Error("Transaction was not submitted to blockchain. Please try again or check your wallet balance.");
-        }
-        
-        const explorerUrl = `${chainConfig.explorer}/tx/${txHash}`;
-        console.log(`[${label}] Transaction submitted:`, explorerUrl);
-        
-        pushToast({ 
-          type: "success", 
+        pushToast({ type: "info", title: `${label} pending...`, detail: "Approve in your wallet" });
+        const hash = await writeContractAsync(params);
+        pushToast({
+          type: "success",
           title: `${label} confirmed`,
-          detail: `View on explorer: ${txHash.slice(0, 10)}...`
+          detail: hash ? `TX: ${hash.slice(0, 14)}...` : undefined
         });
-        return result;
+        return hash;
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Transaction failed";
         pushToast({ type: "error", title: label, detail: msg });
@@ -457,34 +145,40 @@ export default function AdminPage() {
         setIsLoading(false);
       }
     },
-    [executeChallenge, pushToast, userToken, walletAddress, walletId, walletBlockchain, hasManuallyChangedChain, selectedChainId, chainConfig]
+    [pushToast, walletAddress, writeContractAsync]
   );
 
   // ============ REFRESH DATA ============
 
   const refreshData = useCallback(async () => {
-    if (!rpcProvider) return;
-
     try {
       // NFT Data
       try {
-        const nft = new ethers.Contract(chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, rpcProvider);
-        const [admin, nextId] = await Promise.all([nft.admin(), nft.nextTokenId()]);
-        setNftAdmin(admin);
-        setNftNextTokenId(nextId);
+        const nftResults = await publicClient.multicall({
+          contracts: [
+            { address: contracts.HouseNFT, abi: houseNftAbi, functionName: "admin" },
+            { address: contracts.HouseNFT, abi: houseNftAbi, functionName: "nextTokenId" },
+          ],
+        });
+
+        setNftAdmin((nftResults[0].result as string) ?? "");
+        setNftNextTokenId(nftResults[1].result as bigint ?? null);
 
         const tokenId = BigInt(nftTokenId || "1");
         try {
-          const [phase, controller, owner, uri] = await Promise.all([
-            nft.tokenPhase(tokenId),
-            nft.tokenController(tokenId),
-            nft.ownerOf(tokenId),
-            nft.tokenURI(tokenId),
-          ]);
-          setNftTokenPhase(Number(phase));
-          setNftTokenController(controller);
-          setNftTokenOwner(owner);
-          setNftTokenUri(uri);
+          const tokenResults = await publicClient.multicall({
+            contracts: [
+              { address: contracts.HouseNFT, abi: houseNftAbi, functionName: "tokenPhase", args: [tokenId] },
+              { address: contracts.HouseNFT, abi: houseNftAbi, functionName: "tokenController", args: [tokenId] },
+              { address: contracts.HouseNFT, abi: houseNftAbi, functionName: "ownerOf", args: [tokenId] },
+              { address: contracts.HouseNFT, abi: houseNftAbi, functionName: "tokenURI", args: [tokenId] },
+            ],
+          });
+
+          setNftTokenPhase(tokenResults[0].result != null ? Number(tokenResults[0].result) : null);
+          setNftTokenController((tokenResults[1].result as string) ?? "");
+          setNftTokenOwner((tokenResults[2].result as string) ?? "");
+          setNftTokenUri((tokenResults[3].result as string) ?? "");
         } catch {
           setNftTokenPhase(null);
           setNftTokenController("");
@@ -497,72 +191,69 @@ export default function AdminPage() {
 
       // Factory Data
       try {
-        const factory = new ethers.Contract(chainConfig.contracts.AuctionFactory, FACTORY_ABI, rpcProvider);
-        const [fOwner, auctions] = await Promise.all([factory.owner(), factory.getAuctions()]);
-        setFactoryOwner(fOwner);
-        setAuctionsList(auctions);
+        const factoryResults = await publicClient.multicall({
+          contracts: [
+            { address: contracts.AuctionFactory, abi: factoryAbi, functionName: "owner" },
+            { address: contracts.AuctionFactory, abi: factoryAbi, functionName: "getAuctions" },
+          ],
+        });
+
+        setFactoryOwner((factoryResults[0].result as string) ?? "");
+        setAuctionsList((factoryResults[1].result as string[]) ?? []);
       } catch (error) {
         console.error("Error loading Factory data:", error);
       }
 
       // Set defaults
-      if (!launchNftContract) setLaunchNftContract(chainConfig.contracts.HouseNFT);
-      if (!launchPaymentToken) setLaunchPaymentToken(chainConfig.usdc);
+      if (!launchNftContract) setLaunchNftContract(contracts.HouseNFT);
+      if (!launchPaymentToken) setLaunchPaymentToken(contracts.USDC);
       if (!launchTreasury && walletAddress) setLaunchTreasury(walletAddress);
 
       // Auction Data
       try {
-        const auctionAddr = selectedAuction || chainConfig.contracts.AuctionManager;
+        const auctionAddr = (selectedAuction || contracts.AuctionManager) as `0x${string}`;
         if (auctionAddr) {
-          const auction = new ethers.Contract(auctionAddr, AUCTION_ABI, rpcProvider);
-          const [owner, phase, leader, highBid, floorPrice, participationFee, minIncrement, winner, finalized, paused] = await Promise.all([
-            auction.owner(),
-            auction.currentPhase(),
-            auction.currentLeader(),
-            auction.currentHighBid(),
-            auction.floorPrice().catch(() => BigInt(0)),
-            auction.participationFee().catch(() => BigInt(0)),
-            auction.minBidIncrement().catch(() => BigInt(0)),
-            auction.winner(),
-            auction.finalized(),
-            auction.paused(),
-          ]);
-          setAuctionOwner(owner);
-          setAuctionPhase(Number(phase));
-          setAuctionLeader(leader);
-          setAuctionHighBid(highBid);
-          setAuctionFloorPrice(floorPrice);
-          setAuctionParticipationFee(participationFee);
-          setAuctionMinIncrement(minIncrement);
-          setAuctionWinner(winner);
-          setAuctionFinalized(finalized);
-          setAuctionPaused(paused);
+          const auctionResults = await publicClient.multicall({
+            contracts: [
+              { address: auctionAddr, abi: auctionAbi, functionName: "owner" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "currentPhase" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "currentLeader" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "currentHighBid" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "floorPrice" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "participationFee" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "minBidIncrement" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "winner" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "finalized" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "paused" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "getTimeRemaining" },
+              { address: auctionAddr, abi: auctionAbi, functionName: "getBidderCount" },
+            ],
+          });
 
-          try {
-            const [timeRem, bidderCount] = await Promise.all([
-              auction.getTimeRemaining(),
-              auction.getBidderCount(),
-            ]);
-            setAuctionTimeRemaining(timeRem);
-            setAuctionBidderCount(Number(bidderCount));
-          } catch {
-            setAuctionTimeRemaining(null);
-            setAuctionBidderCount(null);
-          }
+          setAuctionOwner((auctionResults[0].result as string) ?? "");
+          setAuctionPhase(auctionResults[1].result != null ? Number(auctionResults[1].result) : null);
+          setAuctionLeader((auctionResults[2].result as string) ?? "");
+          setAuctionHighBid(auctionResults[3].result as bigint ?? null);
+          setAuctionFloorPrice(auctionResults[4].result as bigint ?? null);
+          setAuctionParticipationFee(auctionResults[5].result as bigint ?? 0n);
+          setAuctionMinIncrement(auctionResults[6].result as bigint ?? 0n);
+          setAuctionWinner((auctionResults[7].result as string) ?? "");
+          setAuctionFinalized(auctionResults[8].result as boolean ?? null);
+          setAuctionPaused(auctionResults[9].result as boolean ?? null);
+          setAuctionTimeRemaining(auctionResults[10].result as bigint ?? null);
+          setAuctionBidderCount(auctionResults[11].result != null ? Number(auctionResults[11].result) : null);
         }
       } catch (error) {
         console.error("Error loading Auction data:", error);
       }
-      // Update last refreshed timestamp
       setLastRefreshed(new Date());
     } catch (error) {
       console.error("Error refreshing data:", error);
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       pushToast({ type: "error", title: "Failed to load data", detail: errorMsg });
     }
-  }, [rpcProvider, chainConfig, nftTokenId, selectedAuction, launchNftContract, launchPaymentToken, launchTreasury, walletAddress, pushToast]);
+  }, [publicClient, nftTokenId, selectedAuction, launchNftContract, launchPaymentToken, launchTreasury, walletAddress, pushToast]);
 
-  // Only fetch on mount - no auto-refresh to save RPC calls
   useEffect(() => {
     refreshData();
   }, [refreshData]);
@@ -570,23 +261,30 @@ export default function AdminPage() {
   // ============ NFT ACTIONS ============
 
   const handleMint = async () => {
-    if (!ethers.isAddress(mintRecipient)) {
+    if (!isAddress(mintRecipient)) {
       pushToast({ type: "error", title: "Invalid recipient" });
       return;
     }
-    await runContractTx("Mint NFT", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "mintTo", [mintRecipient]);
+    await runTx("Mint NFT", {
+      address: contracts.HouseNFT,
+      abi: houseNftAbi,
+      functionName: "mintTo",
+      args: [mintRecipient as `0x${string}`],
+    });
     refreshData();
   };
 
   const handleSetController = async () => {
-    if (!ethers.isAddress(setControllerAddr)) {
+    if (!isAddress(setControllerAddr)) {
       pushToast({ type: "error", title: "Invalid controller address" });
       return;
     }
-    await runContractTx("Set Controller", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "setController", [
-      BigInt(nftTokenId),
-      setControllerAddr,
-    ]);
+    await runTx("Set Controller", {
+      address: contracts.HouseNFT,
+      abi: houseNftAbi,
+      functionName: "setController",
+      args: [BigInt(nftTokenId), setControllerAddr as `0x${string}`],
+    });
     refreshData();
   };
 
@@ -595,10 +293,12 @@ export default function AdminPage() {
       pushToast({ type: "error", title: "Fill all 4 URIs" });
       return;
     }
-    await runContractTx("Set Phase URIs", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "setPhaseURIs", [
-      BigInt(nftTokenId),
-      phaseUris,
-    ]);
+    await runTx("Set Phase URIs", {
+      address: contracts.HouseNFT,
+      abi: houseNftAbi,
+      functionName: "setPhaseURIs",
+      args: [BigInt(nftTokenId), phaseUris as [string, string, string, string]],
+    });
     refreshData();
   };
 
@@ -607,147 +307,126 @@ export default function AdminPage() {
       pushToast({ type: "error", title: "URI required" });
       return;
     }
-    await runContractTx("Update Phase URI", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "updatePhaseURI", [
-      BigInt(nftTokenId),
-      Number(singlePhaseIdx),
-      singlePhaseUri,
-    ]);
+    await runTx("Update Phase URI", {
+      address: contracts.HouseNFT,
+      abi: houseNftAbi,
+      functionName: "updatePhaseURI",
+      args: [BigInt(nftTokenId), Number(singlePhaseIdx), singlePhaseUri],
+    });
     refreshData();
   };
 
   const handleAdvanceNftPhase = async () => {
-    await runContractTx("Advance NFT Phase", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "advancePhase", [
-      BigInt(nftTokenId),
-    ]);
+    await runTx("Advance NFT Phase", {
+      address: contracts.HouseNFT,
+      abi: houseNftAbi,
+      functionName: "advancePhase",
+      args: [BigInt(nftTokenId)],
+    });
     refreshData();
   };
 
   const handleTransferNftToFactory = async () => {
     if (!walletAddress) return;
-    await runContractTx("Transfer NFT to Factory", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "safeTransferFrom", [
-      walletAddress,
-      chainConfig.contracts.AuctionFactory,
-      BigInt(nftTokenId),
-    ]);
+    await runTx("Transfer NFT to Factory", {
+      address: contracts.HouseNFT,
+      abi: houseNftAbi,
+      functionName: "safeTransferFrom",
+      args: [walletAddress, contracts.AuctionFactory, BigInt(nftTokenId)],
+    });
     refreshData();
   };
 
   const handleTransferAdmin = async () => {
-    if (!ethers.isAddress(transferAdminAddr)) {
+    if (!isAddress(transferAdminAddr)) {
       pushToast({ type: "error", title: "Invalid admin address" });
       return;
     }
-    await runContractTx("Transfer Admin", chainConfig.contracts.HouseNFT, HOUSE_NFT_ABI, "transferAdmin", [
-      transferAdminAddr,
-    ]);
+    await runTx("Transfer Admin", {
+      address: contracts.HouseNFT,
+      abi: houseNftAbi,
+      functionName: "transferAdmin",
+      args: [transferAdminAddr as `0x${string}`],
+    });
     refreshData();
   };
 
   // ============ LAUNCH AUCTION ============
 
   const handleLaunchAuction = async () => {
-    if (!ethers.isAddress(launchNftContract) || !ethers.isAddress(launchPaymentToken) || !ethers.isAddress(launchTreasury)) {
+    if (!isAddress(launchNftContract) || !isAddress(launchPaymentToken) || !isAddress(launchTreasury)) {
       pushToast({ type: "error", title: "Invalid addresses" });
       return;
     }
 
     // Verify NFT is owned by the factory
-    if (rpcProvider) {
-      try {
-        const nft = new ethers.Contract(launchNftContract, HOUSE_NFT_ABI, rpcProvider);
-        const owner = await nft.ownerOf(BigInt(launchTokenId));
-        
-        if (owner.toLowerCase() !== chainConfig.contracts.AuctionFactory.toLowerCase()) {
-          pushToast({ 
-            type: "error", 
-            title: "NFT not transferred", 
-            detail: "Transfer the NFT to the Factory first (see Manage NFT tab)" 
-          });
-          return;
-        }
-      } catch (error) {
-        console.error("Error checking NFT owner:", error);
-        pushToast({ 
-          type: "error", 
-          title: "Cannot verify NFT", 
-          detail: "Make sure the NFT contract and token ID are correct" 
+    try {
+      const owner = await publicClient.readContract({
+        address: launchNftContract as `0x${string}`,
+        abi: houseNftAbi,
+        functionName: "ownerOf",
+        args: [BigInt(launchTokenId)],
+      });
+
+      if ((owner as string).toLowerCase() !== contracts.AuctionFactory.toLowerCase()) {
+        pushToast({
+          type: "error",
+          title: "NFT not transferred",
+          detail: "Transfer the NFT to the Factory first (see Manage NFT tab)"
         });
         return;
       }
-    }
-
-    const durations = launchPhaseDurations.map((d) => BigInt(d || "0"));
-    const floorPrice = ethers.parseUnits(launchFloorPrice || "0", 6);
-    const participationFee = ethers.parseUnits(launchParticipationFee || "0", 6);
-
-    const result = await runContractTx("Create Auction", chainConfig.contracts.AuctionFactory, FACTORY_ABI, "createAuction", [
-      walletAddress, // admin
-      launchPaymentToken,
-      launchNftContract,
-      BigInt(launchTokenId),
-      durations,
-      floorPrice,
-      BigInt(launchMinIncrement),
-      launchEnforceIncrement,
-      participationFee,
-      launchTreasury,
-    ]);
-    
-    if (!result || !result.transactionHash) {
-      console.error("Auction creation failed - no transaction hash received");
+    } catch (error) {
+      console.error("Error checking NFT owner:", error);
+      pushToast({
+        type: "error",
+        title: "Cannot verify NFT",
+        detail: "Make sure the NFT contract and token ID are correct"
+      });
       return;
     }
-    
-    // Fetch the new auction address from the transaction receipt
-    try {
-      console.log("Waiting for transaction receipt...");
-      const receipt = await rpcProvider?.getTransactionReceipt(result.transactionHash);
-      
-      if (receipt && receipt.logs.length > 0) {
-        // Parse the AuctionCreated event to get the new auction address
-        const factoryInterface = new ethers.Interface([
-          "event AuctionCreated(address indexed auction, address indexed nftContract, uint256 indexed tokenId)"
-        ]);
-        
-        for (const log of receipt.logs) {
-          try {
-            const parsed = factoryInterface.parseLog({
-              topics: log.topics as string[],
-              data: log.data
-            });
-            
-            if (parsed && parsed.name === "AuctionCreated") {
-              const newAuctionAddress = parsed.args[0];
-              console.log("✅ New auction created at:", newAuctionAddress);
-              pushToast({
-                type: "success",
-                title: "Auction created successfully!",
-                detail: `Address: ${newAuctionAddress.slice(0, 10)}... - Check Auctions page`
-              });
-              break;
-            }
-          } catch (e) {
-            // Skip logs that don't match
-            continue;
-          }
-        }
-      } else {
-        console.warn("Transaction receipt has no logs");
-      }
-    } catch (error) {
-      console.error("Error fetching auction address from receipt:", error);
-      // Still successful, just couldn't parse the address
+
+    const durations = launchPhaseDurations.map((d) => BigInt(d || "0")) as [bigint, bigint, bigint, bigint];
+    const floorPrice = parseUnits(launchFloorPrice || "0", 6);
+    const participationFee = parseUnits(launchParticipationFee || "0", 6);
+
+    const result = await runTx("Create Auction", {
+      address: contracts.AuctionFactory,
+      abi: factoryAbi,
+      functionName: "createAuction",
+      args: [
+        walletAddress!,
+        launchPaymentToken as `0x${string}`,
+        launchNftContract as `0x${string}`,
+        BigInt(launchTokenId),
+        durations,
+        floorPrice,
+        BigInt(launchMinIncrement),
+        launchEnforceIncrement,
+        participationFee,
+        launchTreasury as `0x${string}`,
+      ],
+    });
+
+    if (result) {
+      pushToast({
+        type: "success",
+        title: "Auction created!",
+        detail: "Check Auctions page for the new auction"
+      });
     }
-    
-    // Don't refresh immediately to avoid rate limits
-    console.log("✅ Auction created. Visit Auctions page or wait for auto-refresh.");
   };
 
   // ============ MANAGE AUCTION ============
 
-  const handleAuctionAction = async (label: string, method: string, args: unknown[] = []) => {
-    const addr = selectedAuction || chainConfig.contracts.AuctionManager;
-    await runContractTx(label, addr, AUCTION_ABI, method, args);
+  const handleAuctionAction = async (label: string, functionName: string, args: unknown[] = []) => {
+    const addr = (selectedAuction || contracts.AuctionManager) as `0x${string}`;
+    await runTx(label, {
+      address: addr,
+      abi: auctionAbi,
+      functionName: functionName as any,
+      args: args as any,
+    });
     refreshData();
   };
 
@@ -761,9 +440,9 @@ export default function AdminPage() {
     return `${h}h ${m}m`;
   };
 
-  const formatUsdc = (amount: bigint | null) => {
+  const formatUsdcDisplay = (amount: bigint | null) => {
     if (amount === null) return "-";
-    return ethers.formatUnits(amount, 6);
+    return formatUnits(amount, 6);
   };
 
   return (
@@ -771,55 +450,45 @@ export default function AdminPage() {
       <Header />
 
       <div className="mx-auto max-w-5xl px-6 py-8">
+        {/* Chain Mismatch Warning */}
+        {isChainMismatch && (
+          <div className="mb-6">
+            <ChainMismatchWarning
+              targetChainId={84532}
+              onSwitch={() => switchToChain(84532)}
+            />
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-            <p className="text-sm text-white/50">Manage NFTs, Launch & Control Auctions</p>
+            <p className="text-sm text-white/50">
+              Manage NFTs, Launch & Control Auctions on {chainMeta.chainName}
+            </p>
           </div>
 
           <div className="flex items-center gap-3">
-            <select
-              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm"
-              value={selectedChainId}
-              onChange={(e) => {
-                setSelectedChainId(Number(e.target.value));
-                setHasManuallyChangedChain(true);
-              }}
+            <button
+              onClick={refreshData}
+              className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
             >
-              {Object.values(CHAIN_DEPLOYMENTS).map((c) => (
-                <option key={c.chainId} value={c.chainId}>
-                  {c.chainName}
-                </option>
-              ))}
-            </select>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={refreshData}
-                className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
-              >
-                Refresh
-              </button>
-              {lastRefreshed && (
-                <span className="text-xs text-white/40">
-                  Last: {lastRefreshed.toLocaleTimeString()}
-                </span>
-              )}
-            </div>
+              Refresh
+            </button>
+            {lastRefreshed && (
+              <span className="text-xs text-white/40">
+                Last: {lastRefreshed.toLocaleTimeString()}
+              </span>
+            )}
           </div>
         </div>
 
         {/* Session Status */}
         <div className="mb-6 flex flex-wrap items-center gap-3 text-sm">
           <div className={`rounded-full px-3 py-1 ${hasSession ? "bg-emerald-500/20 text-emerald-300" : "bg-red-500/20 text-red-300"}`}>
-            {hasSession ? `Connected: ${shorten(walletAddress)}` : "Not connected"}
+            {hasSession ? `Connected: ${shorten(walletAddress!)}` : "Not connected"}
           </div>
-          {!hasSession && (
-            <button onClick={restoreSession} className="rounded-full border border-white/20 px-3 py-1 text-white/60 hover:bg-white/5">
-              Load Session
-            </button>
-          )}
         </div>
 
         {/* Tabs */}
@@ -852,7 +521,7 @@ export default function AdminPage() {
               <div className="grid gap-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-white/50">Address</span>
-                  <span className="font-mono">{shorten(chainConfig.contracts.HouseNFT)}</span>
+                  <span className="font-mono">{shorten(contracts.HouseNFT)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/50">Admin</span>
@@ -1079,7 +748,7 @@ export default function AdminPage() {
               <div className="grid gap-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-white/50">Address</span>
-                  <span className="font-mono">{shorten(chainConfig.contracts.AuctionFactory)}</span>
+                  <span className="font-mono">{shorten(contracts.AuctionFactory)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/50">Owner</span>
@@ -1095,7 +764,7 @@ export default function AdminPage() {
             {/* Warning */}
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
               <strong>Important:</strong> Before creating an auction, the NFT must be transferred to the Factory contract.
-              Use the "Transfer NFT to Factory" button in the Manage NFT tab.
+              Use the &quot;Transfer NFT to Factory&quot; button in the Manage NFT tab.
             </div>
 
             {/* Launch Form */}
@@ -1213,11 +882,11 @@ export default function AdminPage() {
               <h2 className="text-lg font-semibold mb-4">Select Auction</h2>
               <select
                 className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
-                value={selectedAuction || chainConfig.contracts.AuctionManager}
+                value={selectedAuction || contracts.AuctionManager}
                 onChange={(e) => setSelectedAuction(e.target.value)}
               >
-                <option value={chainConfig.contracts.AuctionManager}>
-                  Default: {shorten(chainConfig.contracts.AuctionManager)}
+                <option value={contracts.AuctionManager}>
+                  Default: {shorten(contracts.AuctionManager)}
                 </option>
                 {auctionsList.map((a) => (
                   <option key={a} value={a}>{shorten(a)}</option>
@@ -1249,15 +918,15 @@ export default function AdminPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/50">High Bid</span>
-                  <span className="text-cyan-400">{formatUsdc(auctionHighBid)} USDC</span>
+                  <span className="text-cyan-400">{formatUsdcDisplay(auctionHighBid)} USDC</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/50">Floor Price</span>
-                  <span className="text-emerald-400">{formatUsdc(auctionFloorPrice)} USDC</span>
+                  <span className="text-emerald-400">{formatUsdcDisplay(auctionFloorPrice)} USDC</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/50">Participation Fee</span>
-                  <span className="text-yellow-400">{formatUsdc(auctionParticipationFee)} USDC</span>
+                  <span className="text-yellow-400">{formatUsdcDisplay(auctionParticipationFee)} USDC</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/50">Min Increment</span>
@@ -1352,7 +1021,7 @@ export default function AdminPage() {
                 />
                 <button
                   onClick={() => handleAuctionAction("Emergency Withdraw NFT", "emergencyWithdrawNFT", [emergencyWithdrawTo])}
-                  disabled={!isAuctionOwner || isLoading || !ethers.isAddress(emergencyWithdrawTo)}
+                  disabled={!isAuctionOwner || isLoading || !isAddress(emergencyWithdrawTo)}
                   className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                 >
                   Emergency Withdraw NFT
