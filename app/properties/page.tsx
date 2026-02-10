@@ -248,6 +248,9 @@ export default function PropertiesPage() {
                 tokenURI: token.tokenURI,
                 phaseURIs: token.phaseURIs,
               }}
+              onClick={() => {
+                window.location.href = `/property-detail?chain=${selectedChainId}&tokenId=${token.tokenId}`;
+              }}
             />
           ))}
         </div>

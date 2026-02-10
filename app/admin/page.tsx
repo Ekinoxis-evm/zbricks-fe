@@ -4,10 +4,34 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAccount, useWriteContract } from "wagmi";
 import { isAddress, parseUnits, formatUnits, createPublicClient, http } from "viem";
 import { auctionAbi, erc20Abi, houseNftAbi, factoryAbi } from "@/lib/contracts";
-import { useChainSync, ChainMismatchWarning } from "@/lib/hooks/useChainSync";
 import Header from "../components/Header";
 import PhaseProgressBar from "../components/PhaseProgressBar";
 import PhaseMetadataBuilder from "../components/PhaseMetadataBuilder";
+import { base, baseSepolia } from "wagmi/chains";
+import { getChainMeta, getContractsForChain } from "@/lib/contracts";
+import type { Address } from "viem";
+
+// ============ CONSTANTS ============
+
+const CHAIN_DEPLOYMENTS: Record<
+  number,
+  {
+    chainId: number;
+    chainName: string;
+    explorer: string;
+  }
+> = {
+  8453: {
+    chainId: 8453,
+    chainName: "Base Mainnet",
+    explorer: "https://base.blockscout.com",
+  },
+  84532: {
+    chainId: 84532,
+    chainName: "Base Sepolia",
+    explorer: "https://base-sepolia.blockscout.com",
+  },
+};
 
 // ============ TYPES ============
 
@@ -28,25 +52,20 @@ const shorten = (addr: string) => (addr ? `${addr.slice(0, 6)}...${addr.slice(-4
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>("nft");
+  const [selectedChainId, setSelectedChainId] = useState<number>(84532);
   const { writeContractAsync } = useWriteContract();
+  const { isConnected, address: walletAddress } = useAccount();
   
-  // Use chain sync hook for proper connection management
-  const {
-    activeChainId,
-    chain,
-    chainMeta,
-    contracts,
-    isConnected,
-    address: walletAddress,
-    isChainMismatch,
-    switchToChain,
-  } = useChainSync(84532); // Prefer Base Sepolia for admin
+  // Get chain info from selectedChainId (not wallet chainId)
+  const chain = selectedChainId === 8453 ? base : baseSepolia;
+  const chainMeta = getChainMeta(selectedChainId as any);
+  const contracts = getContractsForChain(selectedChainId as any);
 
   const hasSession = isConnected && !!walletAddress;
 
   const publicClient = useMemo(
     () => createPublicClient({ chain, transport: http(chainMeta.rpcDefault) }),
-    [chain, chainMeta.rpcDefault]
+    [chain, chainMeta.rpcDefault, selectedChainId]
   );
 
   // UI
@@ -450,26 +469,29 @@ export default function AdminPage() {
       <Header />
 
       <div className="mx-auto max-w-5xl px-6 py-8">
-        {/* Chain Mismatch Warning */}
-        {isChainMismatch && (
-          <div className="mb-6">
-            <ChainMismatchWarning
-              targetChainId={84532}
-              onSwitch={() => switchToChain(84532)}
-            />
-          </div>
-        )}
 
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold">Admin Dashboard</h1>
             <p className="text-sm text-white/50">
-              Manage NFTs, Launch & Control Auctions on {chainMeta.chainName}
+              Manage NFTs, Launch & Control Auctions
             </p>
           </div>
 
           <div className="flex items-center gap-3">
+            <select
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm"
+              value={selectedChainId}
+              onChange={(e) => setSelectedChainId(Number(e.target.value))}
+            >
+              {Object.values(CHAIN_DEPLOYMENTS).map((c) => (
+                <option key={c.chainId} value={c.chainId}>
+                  {c.chainName}
+                </option>
+              ))}
+            </select>
+
             <button
               onClick={refreshData}
               className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
@@ -516,7 +538,7 @@ export default function AdminPage() {
         {activeTab === "nft" && (
           <div className="space-y-6">
             {/* NFT Info */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h2 className="text-lg font-semibold mb-4">HouseNFT Contract</h2>
               <div className="grid gap-3 text-sm">
                 <div className="flex justify-between">
@@ -535,7 +557,7 @@ export default function AdminPage() {
             </div>
 
             {/* Token Query */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h3 className="font-semibold mb-3">Query Token</h3>
               <div className="flex gap-3 mb-4">
                 <input
@@ -557,7 +579,7 @@ export default function AdminPage() {
             </div>
 
             {/* Mint */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h3 className="font-semibold mb-3">Mint NFT</h3>
               <div className="flex gap-3">
                 <input
@@ -578,7 +600,7 @@ export default function AdminPage() {
             </div>
 
             {/* Set Controller */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h3 className="font-semibold mb-3">Set Controller (for Token #{nftTokenId})</h3>
               <div className="flex gap-3">
                 <input
@@ -598,7 +620,7 @@ export default function AdminPage() {
             </div>
 
             {/* Set Phase URIs */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h3 className="font-semibold mb-3">Set Phase URIs (Token #{nftTokenId})</h3>
               <div className="grid gap-2 mb-3">
                 {phaseUris.map((uri, i) => (
@@ -662,7 +684,7 @@ export default function AdminPage() {
             </div>
 
             {/* Update Single URI */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h3 className="font-semibold mb-3">Update Single Phase URI</h3>
               <div className="flex gap-3 mb-3">
                 <select
@@ -692,7 +714,7 @@ export default function AdminPage() {
 
             {/* Advance Phase & Transfer */}
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <div className="rounded-xl border border-white/10 bg-white/2 p-5">
                 <h3 className="font-semibold mb-3">Advance NFT Phase</h3>
                 <p className="text-xs text-white/50 mb-3">Current phase: {nftTokenPhase ?? "-"}</p>
                 <button
@@ -704,7 +726,7 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <div className="rounded-xl border border-white/10 bg-white/2 p-5">
                 <h3 className="font-semibold mb-3">Transfer NFT to Factory</h3>
                 <p className="text-xs text-white/50 mb-3">Required before creating auction</p>
                 <button
@@ -718,7 +740,7 @@ export default function AdminPage() {
             </div>
 
             {/* Transfer Admin */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h3 className="font-semibold mb-3">Transfer NFT Admin</h3>
               <div className="flex gap-3">
                 <input
@@ -743,7 +765,7 @@ export default function AdminPage() {
         {activeTab === "launch" && (
           <div className="space-y-6">
             {/* Factory Info */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h2 className="text-lg font-semibold mb-4">AuctionFactory</h2>
               <div className="grid gap-3 text-sm">
                 <div className="flex justify-between">
@@ -768,7 +790,7 @@ export default function AdminPage() {
             </div>
 
             {/* Launch Form */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h3 className="font-semibold mb-4">Create New Auction</h3>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -878,7 +900,7 @@ export default function AdminPage() {
         {activeTab === "manage" && (
           <div className="space-y-6">
             {/* Auction Selector */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h2 className="text-lg font-semibold mb-4">Select Auction</h2>
               <select
                 className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
@@ -895,7 +917,7 @@ export default function AdminPage() {
             </div>
 
             {/* Auction State */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h3 className="font-semibold mb-4">Auction State</h3>
               <div className="grid gap-3 text-sm md:grid-cols-2">
                 <div className="flex justify-between">
@@ -960,7 +982,7 @@ export default function AdminPage() {
             </div>
 
             {/* Phase Actions */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h3 className="font-semibold mb-4">Phase Control</h3>
               <div className="grid gap-3 md:grid-cols-2">
                 <button
@@ -981,7 +1003,7 @@ export default function AdminPage() {
             </div>
 
             {/* Financial Actions */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-white/2 p-5">
               <h3 className="font-semibold mb-4">Financial</h3>
               <button
                 onClick={() => handleAuctionAction("Withdraw Proceeds", "withdrawProceeds")}

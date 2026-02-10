@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@base-org/account": "^2.5.2",
+    "@base-org/account-ui": "^1.0.1",
     "@rainbow-me/rainbowkit": "^2.2.10",
     "@tanstack/react-query": "^5.90.20",
     "next": "16.1.6",

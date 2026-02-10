@@ -6,9 +6,10 @@ import { useWriteContract } from "wagmi";
 import { formatUnits, parseUnits, isAddress, zeroAddress } from "viem";
 import { createPublicClient, http } from "viem";
 import { auctionAbi, erc20Abi, houseNftAbi } from "@/lib/contracts";
-import { useRequireWallet } from "@/lib/hooks/useWalletConnection";
-import { WalletStatusBanner, ChainIndicator } from "../components/WalletStatus";
+import { useAccount } from "wagmi";
 import Header from "../components/Header";
+import { base, baseSepolia } from "wagmi/chains";
+import { getChainMeta, getContractsForChain } from "@/lib/contracts";
 import PhaseProgressBar from "../components/PhaseProgressBar";
 import PropertyCard from "../components/PropertyCard";
 import { fetchNFTMetadataFull } from "@/lib/metadata";
@@ -135,21 +136,13 @@ function AuctionBidPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { writeContractAsync } = useWriteContract();
-
-  // Use centralized wallet connection hook
-  const {
-    address: walletAddress,
-    isConnected,
-    contracts,
-    chainMeta,
-    chain,
-    connectionStatus,
-    isChainMismatch,
-    switchToChain,
-    activeChainId,
-    isSwitching,
-    canTransact,
-  } = useRequireWallet();
+  const { address: walletAddress, isConnected, chainId } = useAccount();
+  
+  // Get chain info
+  const currentChainId = (chainId ?? 84532) as 8453 | 84532;
+  const chain = currentChainId === 8453 ? base : baseSepolia;
+  const chainMeta = getChainMeta(currentChainId);
+  const contracts = getContractsForChain(currentChainId);
 
   const auctionAddressParam = searchParams.get("auction");
   const hasSession = isConnected && !!walletAddress;
@@ -157,10 +150,10 @@ function AuctionBidPageContent() {
   const ui = useMemo(
     () => ({
       bg: "bg-[#07090A]",
-      card: "bg-white/[0.04] border border-white/[0.08] shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
-      cardInner: "bg-black/30 border border-white/[0.08]",
+      card: "bg-white/4 border border-white/8 shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
+      cardInner: "bg-black/30 border border-white/8",
       pill: "bg-[#0B1516] border border-[#2DD4D4]/35 text-[#7DEAEA]",
-      pillMuted: "bg-white/[0.03] border border-white/[0.08] text-white/70",
+      pillMuted: "bg-white/3 border border-white/8 text-white/70",
       teal: "#2DD4D4",
     }),
     []
@@ -203,7 +196,6 @@ function AuctionBidPageContent() {
 
   const isLeader = hasSession && auctionLeader && walletAddress!.toLowerCase() === auctionLeader.toLowerCase();
   const isWinner = hasSession && auctionWinner && walletAddress!.toLowerCase() === auctionWinner.toLowerCase();
-  const canBid = hasSession && !auctionFinalized && !auctionPaused && auctionPhase !== null && auctionPhase <= 2;
   const canWithdraw = hasSession && userBid !== null && userBid > 0n && !isLeader && !isWinner;
 
   // ============ TOAST ============
@@ -276,7 +268,7 @@ function AuctionBidPageContent() {
     } catch (error) {
       console.error("Failed to load auction data:", error);
     }
-  }, [publicClient, walletAddress, auctionAddress]);
+  }, [publicClient, walletAddress, auctionAddress, contracts.USDC]);
 
   useEffect(() => {
     refreshData();
@@ -327,6 +319,11 @@ function AuctionBidPageContent() {
       return;
     }
 
+    if (!auctionAddress) {
+      pushToast({ type: "error", title: "Missing auction address" });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const approveAmount = parseUnits((amount * 2).toFixed(6), 6);
@@ -354,6 +351,11 @@ function AuctionBidPageContent() {
   const handlePayParticipationFee = async () => {
     if (!hasSession) {
       router.push("/");
+      return;
+    }
+
+    if (!auctionAddress) {
+      pushToast({ type: "error", title: "Missing auction address" });
       return;
     }
 
@@ -404,6 +406,11 @@ function AuctionBidPageContent() {
 
     if (!hasSession) {
       router.push("/");
+      return;
+    }
+
+    if (!auctionAddress) {
+      setBidError("Missing auction address.");
       return;
     }
 
@@ -473,6 +480,11 @@ function AuctionBidPageContent() {
       return;
     }
 
+    if (!auctionAddress) {
+      pushToast({ type: "error", title: "Missing auction address" });
+      return;
+    }
+
     setIsLoading(true);
     try {
       pushToast({ type: "info", title: "Withdraw Bid pending...", detail: "Approve in your wallet" });
@@ -504,15 +516,6 @@ function AuctionBidPageContent() {
       <Header />
 
       <div className="mx-auto max-w-5xl px-4 py-8">
-        {/* Wallet Status Banner */}
-        <WalletStatusBanner
-          connectionStatus={connectionStatus}
-          isChainMismatch={isChainMismatch}
-          chainName={chainMeta.chainName}
-          onSwitchChain={() => switchToChain(activeChainId)}
-          isSwitching={isSwitching}
-        />
-
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-6">
           <div className="min-w-0">
@@ -554,23 +557,32 @@ function AuctionBidPageContent() {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Left: Auction Info & Bidding */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Property Detail Card */}
-            <PropertyCard
-              variant="detail"
-              metadata={propertyMeta}
-              currentPhase={auctionPhase ?? 0}
-              auctionAddress={auctionAddress}
-              auctionData={{
-                floorPrice: auctionFloorPrice ?? undefined,
-                currentHighBid: auctionHighBid ?? undefined,
-                currentLeader: auctionLeader || undefined,
-                bidderCount: auctionBidderCount ?? undefined,
-                timeRemaining: auctionTimeRemaining ?? undefined,
-                finalized: auctionFinalized ?? undefined,
-                paused: auctionPaused ?? undefined,
+            {/* Property Card - Clickable to Detail Page */}
+            <div
+              onClick={() => {
+                if (propertyMeta) {
+                  window.location.href = `/property-detail?chain=${currentChainId}&tokenId=1`;
+                }
               }}
-              isLoading={metaLoading}
-            />
+              className="cursor-pointer"
+            >
+              <PropertyCard
+                variant="token"
+                metadata={propertyMeta}
+                currentPhase={auctionPhase ?? 0}
+                auctionAddress={auctionAddress}
+                auctionData={{
+                  floorPrice: auctionFloorPrice ?? undefined,
+                  currentHighBid: auctionHighBid ?? undefined,
+                  currentLeader: auctionLeader || undefined,
+                  bidderCount: auctionBidderCount ?? undefined,
+                  timeRemaining: auctionTimeRemaining ?? undefined,
+                  finalized: auctionFinalized ?? undefined,
+                  paused: auctionPaused ?? undefined,
+                }}
+                isLoading={metaLoading}
+              />
+            </div>
 
             {/* Auction Status */}
             <div className={`rounded-3xl ${ui.card} p-6`}>

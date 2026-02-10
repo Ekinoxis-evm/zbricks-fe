@@ -1,25 +1,26 @@
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { baseSepolia, base } from "wagmi/chains";
-import { http } from "wagmi";
+import { createConfig, http } from "wagmi";
+import { base, baseSepolia } from "wagmi/chains";
+import { injected, coinbaseWallet, walletConnect } from "wagmi/connectors";
 
-// Ensure we have a project ID - use a placeholder if not set
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || "placeholder-project-id";
 
-export const config = getDefaultConfig({
-  appName: process.env.NEXT_PUBLIC_APP_NAME || "ZBrick Auctions",
-  projectId,
-  chains: [baseSepolia, base],
+export const config = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [
+    injected(),
+    coinbaseWallet({
+      appName: "ZBrick Auctions",
+    }),
+    walletConnect({
+      projectId,
+    }),
+  ],
   transports: {
-    [baseSepolia.id]: http(
-      process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL || 
-      process.env.NEXT_PUBLIC_RPC_BASE_SEPOLIA || 
-      "https://sepolia.base.org"
-    ),
-    [base.id]: http(
-      process.env.NEXT_PUBLIC_BASE_MAINNET_RPC_URL || 
-      process.env.NEXT_PUBLIC_RPC_BASE_MAINNET || 
-      "https://mainnet.base.org"
-    ),
+    [base.id]: http("https://mainnet.base.org"),
+    [baseSepolia.id]: http("https://sepolia.base.org"),
   },
   ssr: true,
+  batch: {
+    multicall: true,
+  },
 });

@@ -42,6 +42,8 @@ type PropertyCardProps = {
   onClick?: () => void;
   isLoading?: boolean;
   fallbackImage?: string;
+  showDetailButton?: boolean;
+  detailButtonText?: string;
 };
 
 // ============ HELPERS ============
@@ -474,7 +476,6 @@ function CompactCard({
 function DetailCard({
   metadata,
   currentPhase,
-  auctionData,
   tokenId,
   fallbackImage,
   className,
@@ -571,148 +572,85 @@ function TokenCard({
   metadata,
   currentPhase,
   tokenId,
-  tokenData,
   fallbackImage,
   className,
+  isLoading,
+  onClick,
 }: PropertyCardProps) {
-  const [showPhaseURIs, setShowPhaseURIs] = useState(false);
+  if (isLoading) {
+    return (
+      <div className={cn("rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden animate-pulse", className)}>
+        <div className="h-48 w-full bg-white/[0.04]" />
+        <div className="p-4 space-y-3">
+          <div className="h-5 w-3/4 rounded bg-white/[0.06]" />
+          <div className="h-3 w-1/2 rounded bg-white/[0.04]" />
+          <div className="h-4 w-full rounded bg-white/[0.04]" />
+        </div>
+      </div>
+    );
+  }
 
-  const phaseLabel = `Phase ${currentPhase}`;
-  const title = metadata?.name || `Token #${tokenId != null ? Number(tokenId) : "?"}`;
-  const heroImage = metadata?.image;
+  const heroImage = metadata?.image || fallbackImage || FALLBACK_IMG;
+  const phaseLabels = ["Phase 0", "Phase 1", "Phase 2", "Final"];
+  const phaseLabel = phaseLabels[Math.min(currentPhase, 3)];
+  const title = metadata?.name || `Property #${tokenId != null ? Number(tokenId) : "?"}`;
+  const description = metadata?.description;
+
+  const city = metadata?.attributes?.find((t) => t.trait_type === "City");
+  const neighborhood = metadata?.attributes?.find((t) => t.trait_type === "Neighborhood");
+  const country = metadata?.attributes?.find((t) => t.trait_type === "Country");
+  const locationParts = [neighborhood?.value, city?.value, country?.value].filter((v) => v && String(v) !== "");
+  const locationText = locationParts.length > 0 ? locationParts.join(", ") : null;
 
   return (
-    <div className={cn("rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden", className)}>
-      {/* Hero image if metadata has one */}
-      {heroImage && (
-        <div className="relative">
-          <IpfsImage
-            src={heroImage}
-            alt={title}
-            className="w-full h-40 object-cover"
-            fallback={fallbackImage || FALLBACK_IMG}
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-          <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-bold border border-white/20 bg-black/50 text-white/80">
-            {phaseLabel}
-          </div>
-        </div>
+    <article
+      onClick={onClick}
+      className={cn(
+        "group rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden transition-all hover:border-cyan-400/50 hover:shadow-[0_20px_60px_rgba(0,0,0,0.5)] cursor-pointer",
+        className,
       )}
-
-      <div className="p-5">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold">{title}</h3>
-          {!heroImage && (
-            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-              {phaseLabel}
-            </span>
-          )}
+    >
+      {/* Image with phase badge */}
+      <div className="relative h-48 overflow-hidden">
+        <IpfsImage
+          src={heroImage}
+          alt={title}
+          className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+          fallback={fallbackImage || FALLBACK_IMG}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+        <div className="absolute top-3 right-3 rounded-full border border-white/20 bg-black/60 px-3 py-1.5 text-xs font-semibold text-white/80 backdrop-blur-sm">
+          {phaseLabel}
         </div>
-
-        {/* Phase progress */}
-        <PhaseProgressBar phase={currentPhase} variant="expanded" />
-
-        {/* Token info */}
-        <div className="mt-4 grid gap-2 text-sm">
-          {tokenData?.owner && (
-            <div className="flex justify-between">
-              <span className="text-white/50">Owner</span>
-              <span className="font-mono">{shortAddr(tokenData.owner)}</span>
-            </div>
-          )}
-          {tokenData?.tokenURI && (
-            <div className="flex justify-between">
-              <span className="text-white/50">Current URI</span>
-              <span className="truncate ml-4 max-w-[200px] text-white/70">{tokenData.tokenURI || "-"}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Phase reveal overview */}
-        <div className="mt-3">
-          <PhaseRevealIndicator currentPhase={currentPhase} />
-        </div>
-
-        {/* Reveal sections */}
-        {metadata && SECTION_KEYS.map((section) => {
-          const sectionTraits = getTraitsForSection(section, metadata.attributes);
-          const sectionMedia = getMediaForSection(section, metadata.media);
-          const sectionDocs = getDocumentsForSection(section, metadata.documents);
-
-          return (
-            <RevealSection key={section} section={section} currentPhase={currentPhase}>
-              <TraitGrid traits={sectionTraits} compact />
-              <MediaGallery media={sectionMedia} />
-              <DocumentList documents={sectionDocs} />
-              {isSectionRevealed(section, currentPhase) && sectionTraits.length === 0 && Object.keys(sectionMedia).length === 0 && Object.keys(sectionDocs).length === 0 && (
-                <div className="text-xs text-white/30 py-2">No data for this section.</div>
-              )}
-            </RevealSection>
-          );
-        })}
-
-        {/* Show all 4 locked sections even without metadata */}
-        {!metadata && SECTION_KEYS.map((section) => (
-          <RevealSection key={section} section={section} currentPhase={currentPhase}>
-            <div className="text-xs text-white/30 py-2">No data for this section.</div>
-          </RevealSection>
-        ))}
-
-        {/* Phase URIs toggle */}
-        {tokenData?.phaseURIs && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowPhaseURIs(!showPhaseURIs); }}
-            className="mt-4 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs hover:bg-white/10 transition"
-          >
-            {showPhaseURIs ? "Hide Phase URIs" : "Show Phase URIs"}
-          </button>
-        )}
       </div>
 
-      {/* Expandable Phase URIs */}
-      {showPhaseURIs && tokenData?.phaseURIs && (
-        <div className="border-t border-white/10 p-5 space-y-3">
-          {tokenData.phaseURIs.map((uri, idx) => {
-            const hasUri = !!uri;
-            return (
-              <div key={idx} className="rounded-lg border border-white/5 bg-white/[0.02] p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-semibold">Phase {idx} URI</div>
-                  <div
-                    className={cn(
-                      "text-[10px] px-2 py-0.5 rounded-full",
-                      hasUri
-                        ? "bg-emerald-500/20 text-emerald-300"
-                        : "bg-white/5 text-white/30",
-                    )}
-                  >
-                    {hasUri ? "Set" : "Not set"}
-                  </div>
-                </div>
-                {hasUri ? (
-                  <>
-                    <div className="mt-1 text-xs text-white/60 truncate font-mono">{uri}</div>
-                    <div className="mt-2 flex gap-2">
-                      <a
-                        href={ipfsToHttp(uri)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-cyan-400 hover:underline"
-                      >
-                        Open in Gateway
-                      </a>
-                    </div>
-                  </>
-                ) : (
-                  <div className="mt-1 text-xs text-white/30">No URI configured for this phase.</div>
-                )}
-              </div>
-            );
-          })}
+      {/* Content */}
+      <div className="p-4 space-y-2.5">
+        {/* Title */}
+        <h3 className="text-base font-bold text-white line-clamp-2">{title}</h3>
+
+        {/* Location */}
+        {locationText && (
+          <div className="flex items-center gap-1.5 text-xs text-white/60">
+            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-cyan-400 shrink-0">
+              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7Z" stroke="currentColor" strokeWidth="1.6" />
+              <circle cx="12" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.6" />
+            </svg>
+            <span className="line-clamp-1">{locationText}</span>
+          </div>
+        )}
+
+        {/* Description */}
+        {description && (
+          <p className="text-xs text-white/60 line-clamp-2">{description}</p>
+        )}
+
+        {/* Phase status */}
+        <div className="pt-1">
+          <PhaseProgressBar phase={currentPhase} variant="compact" />
         </div>
-      )}
-    </div>
+      </div>
+    </article>
   );
 }
 

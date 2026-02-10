@@ -1,24 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createPublicClient, http, formatUnits, zeroAddress } from "viem";
-import { baseSepolia, base } from "viem/chains";
-import { auctionAbi, houseNftAbi, factoryAbi, getContractsForChain, getChainMeta } from "@/lib/contracts";
+import { createPublicClient, http, zeroAddress } from "viem";
+import { baseSepolia, base } from "wagmi/chains";
+import { auctionAbi, getContractsForChain } from "@/lib/contracts";
 import Header from "../components/Header";
-import PhaseProgressBar from "../components/PhaseProgressBar";
 import PropertyCard from "../components/PropertyCard";
 import { fetchNFTMetadataFull, ipfsToHttp } from "@/lib/metadata";
 import type { AuctionMeta } from "@/lib/metadata";
 import type { Address } from "viem";
 
 // ============ CONSTANTS ============
-
-const CHAIN_MAP: Record<number, typeof baseSepolia> = {
-  84532: baseSepolia,
-  8453: base,
-};
 
 const DEFAULT_RPC_BY_CHAIN: Record<number, string> = {
   84532: "https://sepolia.base.org",
@@ -111,20 +104,6 @@ type StatusFilter = "Todas" | "Activa" | "Finalizada";
 
 const shortAddr = (addr: string) => (addr && addr.length > 12 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr || "-");
 
-const formatUsdc = (amount: bigint) => {
-  return Number(formatUnits(amount, 6)).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-};
-
-const formatTimeRemaining = (seconds: bigint) => {
-  const s = Number(seconds);
-  if (s <= 0) return "Ended";
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (h > 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
-};
-
 // Fallback image if metadata fails to load
 const FALLBACK_IMAGE = "/auctions/ALH_Taller_Edificio_E_Cam_01_2025_06_07.jpg";
 
@@ -166,7 +145,6 @@ const fetchNFTMetadata = async (tokenURI: string) => {
 // ============ COMPONENT ============
 
 export default function AuctionsPage() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [auctions, setAuctions] = useState<AuctionData[]>([]);
 
@@ -183,7 +161,7 @@ export default function AuctionsPage() {
 
   const publicClient = useMemo(() => {
     if (!rpcUrl) return null;
-    const chain = CHAIN_MAP[selectedChainId] ?? baseSepolia;
+    const chain = selectedChainId === 8453 ? base : baseSepolia;
     return createPublicClient({ chain, transport: http(rpcUrl) });
   }, [rpcUrl, selectedChainId]);
 
@@ -211,15 +189,11 @@ export default function AuctionsPage() {
         // Check if aborted after async operation
         if (signal?.aborted) return;
 
-        if (!auctionAddresses.includes(chainConfig.contracts.AuctionManager)) {
-          auctionAddresses = [
-            chainConfig.contracts.AuctionManager,
-            ...auctionAddresses,
-          ];
-        }
+        // Ensure there are no duplicate addresses (prevents React key warnings)
+        const uniqueAuctionAddresses = Array.from(new Set(auctionAddresses));
 
-        const auctionDataPromises = auctionAddresses.map(
-          async (addr, index) => {
+        const auctionDataPromises = uniqueAuctionAddresses.map(
+          async (addr) => {
             try {
               // Check abort before each multicall
               if (signal?.aborted) return null;
@@ -327,7 +301,7 @@ export default function AuctionsPage() {
                 title: metadata.title,
                 location: metadata.location,
                 image: metadata.image,
-                metadata: metadata.fullMeta,
+                metadata: metadata as Record<string, unknown>,
               } as AuctionData;
             } catch (error) {
               console.error(`Failed to fetch auction ${addr}:`, error);
@@ -435,7 +409,7 @@ export default function AuctionsPage() {
             </select>
 
             <button
-              onClick={fetchAuctions}
+              onClick={() => fetchAuctions()}
               className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
             >
               Refresh

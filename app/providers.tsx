@@ -10,7 +10,6 @@ import { ErrorBoundary } from "@/app/components/ErrorBoundary";
 import "@rainbow-me/rainbowkit/styles.css";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  // Fix for React 19: QueryClient must be inside component, not at module level
   const [queryClient] = useState(() => new QueryClient());
 
   return (

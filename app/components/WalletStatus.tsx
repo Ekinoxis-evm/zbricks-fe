@@ -1,7 +1,7 @@
 "use client";
 
 type ConnectionStatus = {
-  status: "disconnected" | "wrong-chain" | "connected";
+  status: "connecting" | "disconnected" | "wrong-chain" | "connected";
   message: string;
   canInteract: boolean;
 };
@@ -21,6 +21,47 @@ export function WalletStatusBanner({
   onSwitchChain,
   isSwitching = false,
 }: WalletStatusBannerProps) {
+  if (connectionStatus.status === "connecting") {
+    return (
+      <div
+        style={{
+          background: "rgba(14, 165, 233, 0.12)",
+          border: "1px solid rgba(14, 165, 233, 0.3)",
+          borderRadius: 12,
+          padding: "12px 16px",
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            background: "rgba(14, 165, 233, 0.18)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            fontSize: 18,
+          }}
+        >
+          ⏳
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 600, color: "#38bdf8", marginBottom: 2 }}>
+            Restoring wallet session
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }}>
+            {connectionStatus.message || "Hold tight while we reconnect"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Don't show banner if everything is ok
   if (connectionStatus.status === "connected") {
     return null;
