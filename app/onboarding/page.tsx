@@ -12,7 +12,12 @@ type Step = 0 | 1 | 2;
 export default function OnboardingPage() {
   const router = useRouter();
   const { user } = usePrivy();
-  const { saveProfile } = useUserProfile();
+
+  const walletAddress =
+    user?.wallet?.address ?? user?.linkedAccounts?.find((a) => a.type === "wallet")?.address ?? "";
+  const privyUserId = user?.id ?? "";
+
+  const { saveProfile } = useUserProfile(walletAddress || undefined);
 
   const [step, setStep] = useState<Step>(0);
   const [submitting, setSubmitting] = useState(false);
@@ -26,10 +31,6 @@ export default function OnboardingPage() {
   const [phoneCountryCode, setPhoneCountryCode] = useState("+1");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [expectedInvestment, setExpectedInvestment] = useState("");
-
-  const walletAddress =
-    user?.wallet?.address ?? user?.linkedAccounts?.find((a) => a.type === "wallet")?.address ?? "";
-  const privyUserId = user?.id ?? "";
 
   // Validation per step
   const canProceed =
@@ -51,7 +52,7 @@ export default function OnboardingPage() {
     if (!canProceed) return;
     setSubmitting(true);
     try {
-      saveProfile({
+      await saveProfile({
         walletAddress,
         privyUserId,
         name: name.trim(),

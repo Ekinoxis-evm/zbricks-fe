@@ -1,16 +1,47 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { isAdminWallet } from "@/lib/admin";
+import { supabase } from "@/lib/supabase/client";
 import Link from "next/link";
+
+async function checkAdminInDb(wallet: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("admin_wallets")
+    .select("id")
+    .eq("wallet_address", wallet.toLowerCase())
+    .single();
+  return !!data;
+}
 
 export default function AdminGuard({ children }: { children: React.ReactNode }) {
   const { ready, authenticated, user } = usePrivy();
-
-  if (!ready) return null;
+  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
 
   const walletAddress = user?.wallet?.address;
-  const hasAccess = authenticated && isAdminWallet(walletAddress);
+
+  useEffect(() => {
+    if (!ready) return;
+    if (!authenticated || !walletAddress) {
+      setHasAccess(false);
+      return;
+    }
+
+    // Env var check is instant — if it passes, grant access immediately
+    if (isAdminWallet(walletAddress)) {
+      setHasAccess(true);
+      return;
+    }
+
+    // Otherwise check Supabase admin_wallets table
+    checkAdminInDb(walletAddress)
+      .then(setHasAccess)
+      .catch(() => setHasAccess(false));
+  }, [ready, authenticated, walletAddress]);
+
+  // Loading states
+  if (!ready || hasAccess === null) return null;
 
   if (!hasAccess) {
     return (
