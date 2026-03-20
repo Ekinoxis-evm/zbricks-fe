@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 
@@ -10,14 +10,17 @@ const ADMIN_ADDRESSES = (process.env.NEXT_PUBLIC_ADMIN_ADDRESSES || "")
   .map((a) => a.trim().toLowerCase())
   .filter(Boolean);
 
-function truncateAddress(address: string) {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
 
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const { ready, authenticated, user, login, logout } = usePrivy();
   const [isScrolled, setIsScrolled] = useState(false);
+
+  const handleLogout = async () => {
+    await logout();
+    router.push("/");
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -143,33 +146,31 @@ export default function Header() {
 
         {/* Auth Button */}
         {!ready ? (
-          <div style={{ width: 100, height: 36 }} />
-        ) : authenticated && user?.wallet ? (
+          <div style={{ width: 80, height: 36 }} />
+        ) : authenticated ? (
           <button
-            onClick={logout}
+            onClick={handleLogout}
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 14px",
+              padding: "8px 18px",
               borderRadius: 999,
-              border: "1px solid rgba(103,232,249,0.3)",
-              background: "rgba(103,232,249,0.08)",
-              color: "#67e8f9",
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.05)",
+              color: "rgba(255,255,255,0.65)",
               fontSize: 13,
               fontWeight: 600,
               cursor: "pointer",
+              transition: "background 150ms ease, color 150ms ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.1)";
+              e.currentTarget.style.color = "white";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+              e.currentTarget.style.color = "rgba(255,255,255,0.65)";
             }}
           >
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: "#22c55e",
-              }}
-            />
-            {truncateAddress(user.wallet.address)}
+            Sign Out
           </button>
         ) : (
           <button
