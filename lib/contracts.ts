@@ -36,6 +36,11 @@ const USDC_ADDRESSES = {
   8453: (process.env.NEXT_PUBLIC_USDC_BASE_MAINNET || "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913") as Address,
 };
 
+const ECOP_ADDRESSES = {
+  84532: "0xb934dcb57fb0673b7bc0fca590c5508f1cde955d" as Address,
+  8453: "0x2d7d0fd51f14cb3fe86e15a944acdc7ae121acbe" as Address,
+};
+
 const RPC_URLS = {
   84532: process.env.NEXT_PUBLIC_RPC_BASE_SEPOLIA || "https://sepolia.base.org",
   8453: process.env.NEXT_PUBLIC_RPC_BASE_MAINNET || "https://mainnet.base.org",
@@ -52,6 +57,7 @@ export const ALL_DEPLOYMENTS = typedDeployments;
 export const CONTRACTS = {
   ...ACTIVE_DEPLOYMENT.contracts,
   USDC: USDC_ADDRESSES[ACTIVE_CHAIN_ID],
+  ECOP: ECOP_ADDRESSES[ACTIVE_CHAIN_ID],
 };
 
 export const CHAIN_META = {
