@@ -32,10 +32,10 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="max-w-md rounded-xl border border-red-500/20 bg-slate-900 p-8 text-center">
             <div className="mb-4 text-6xl">⚠️</div>
             <h1 className="mb-2 text-2xl font-bold text-red-400">
-              Something went wrong
+              Algo salió mal
             </h1>
             <p className="mb-4 text-slate-400">
-              {this.state.error?.message || "An unexpected error occurred"}
+              {this.state.error?.message || "Ocurrió un error inesperado"}
             </p>
             <button
               onClick={() => {
@@ -44,7 +44,7 @@ export class ErrorBoundary extends Component<Props, State> {
               }}
               className="rounded-lg bg-teal-500 px-6 py-2 font-medium text-slate-950 transition-colors hover:bg-teal-400"
             >
-              Reload App
+              Recargar App
             </button>
           </div>
         </div>

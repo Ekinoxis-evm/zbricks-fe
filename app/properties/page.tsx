@@ -118,9 +118,9 @@ export default function PropertiesPage() {
       <div className="mx-auto max-w-5xl px-6 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold">Properties</h1>
+            <h1 className="text-2xl font-bold">Propiedades</h1>
             <p className="text-sm text-white/50">
-              View all minted tokens, their phases, and metadata URIs
+              Ver todos los tokens acuñados, sus fases y URIs de metadatos
             </p>
           </div>
 

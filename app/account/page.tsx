@@ -43,16 +43,16 @@ export default function AccountPage() {
 
       <div className="relative mx-auto max-w-3xl px-4 py-10">
         <div className="mb-8 flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold text-white">My Account</h1>
-          <Button variant="secondary" onClick={handleLogout}>Disconnect</Button>
+          <h1 className="text-3xl font-bold text-white">Mi Cuenta</h1>
+          <Button variant="secondary" onClick={handleLogout}>Desconectar</Button>
         </div>
 
         {!isConnected ? (
           <Card>
-            <CardHeader><CardTitle>Wallet Not Connected</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Billetera No Conectada</CardTitle></CardHeader>
             <CardContent>
-              <p className="text-white/70 mb-4">Please connect your wallet to view your account details.</p>
-              <Button onClick={() => router.push("/")} variant="primary">Go Home</Button>
+              <p className="text-white/70 mb-4">Por favor conecta tu billetera para ver los detalles de tu cuenta.</p>
+              <Button onClick={() => router.push("/")} variant="primary">Ir al Inicio</Button>
             </CardContent>
           </Card>
         ) : (
@@ -61,8 +61,8 @@ export default function AccountPage() {
 
             {/* Action Buttons */}
             <div className="grid grid-cols-2 gap-4">
-              <Button variant="primary" fullWidth onClick={() => setShowReceiveModal(true)}>Receive</Button>
-              <Button variant="primary" fullWidth onClick={() => setShowSendForm(!showSendForm)}>Send</Button>
+              <Button variant="primary" fullWidth onClick={() => setShowReceiveModal(true)}>Recibir</Button>
+              <Button variant="primary" fullWidth onClick={() => setShowSendForm(!showSendForm)}>Enviar</Button>
             </div>
 
             {showSendForm && <TransferUSDC onClose={() => setShowSendForm(false)} />}
@@ -70,7 +70,7 @@ export default function AccountPage() {
             {/* Profile Section */}
             {isLoading ? (
               <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-6 text-center text-sm text-white/30">
-                Loading profile…
+                Cargando perfil…
               </div>
             ) : editing ? (
               <ProfileEditForm
@@ -100,22 +100,22 @@ function ProfileCard({ profile, onEdit }: { profile: UserProfile | null; onEdit:
     return (
       <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-6 flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-white">Profile incomplete</p>
-          <p className="text-xs text-white/40 mt-0.5">Complete your profile to access all features.</p>
+          <p className="text-sm font-semibold text-white">Perfil incompleto</p>
+          <p className="text-xs text-white/40 mt-0.5">Completa tu perfil para acceder a todas las funciones.</p>
         </div>
         <button onClick={onEdit} className="rounded-lg bg-[#2DD4D4]/10 border border-[#2DD4D4]/20 px-3 py-1.5 text-xs font-semibold text-[#2DD4D4] hover:bg-[#2DD4D4]/20 transition">
-          Complete
+          Completar
         </button>
       </div>
     );
   }
 
   const rows: [string, string][] = [
-    ["Full Name", `${profile.name} ${profile.lastName}`],
-    ["Email", profile.email],
-    ["Phone", `${profile.phoneCountryCode} ${profile.phoneNumber}`],
-    ["Investment Range", profile.expectedInvestment],
-    ["Member Since", new Date(profile.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })],
+    ["Nombre Completo", `${profile.name} ${profile.lastName}`],
+    ["Correo", profile.email],
+    ["Teléfono", `${profile.phoneCountryCode} ${profile.phoneNumber}`],
+    ["Rango de Inversión", profile.expectedInvestment],
+    ["Miembro Desde", new Date(profile.createdAt).toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })],
   ];
 
   return (
@@ -127,11 +127,11 @@ function ProfileCard({ profile, onEdit }: { profile: UserProfile | null; onEdit:
           </div>
           <div>
             <p className="text-sm font-semibold text-white">{profile.name} {profile.lastName}</p>
-            <p className="text-xs text-white/40">Investor Profile</p>
+            <p className="text-xs text-white/40">Perfil de Inversor</p>
           </div>
         </div>
         <button onClick={onEdit} className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white/60 hover:bg-white/[0.08] hover:text-white transition">
-          Edit
+          Editar
         </button>
       </div>
 
@@ -183,7 +183,7 @@ function ProfileEditForm({
       await saveProfile({ walletAddress, privyUserId, name: name.trim(), lastName: lastName.trim(), email: email.trim(), phoneCountryCode, phoneNumber: phoneNumber.trim(), expectedInvestment });
       onDone();
     } catch {
-      setError("Failed to save. Please try again.");
+      setError("Error al guardar. Por favor intenta de nuevo.");
     } finally {
       setSaving(false);
     }
@@ -192,29 +192,29 @@ function ProfileEditForm({
   return (
     <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
       <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
-        <p className="text-sm font-semibold text-white">Edit Profile</p>
-        <button onClick={onDone} className="text-xs text-white/30 hover:text-white/60 transition">✕ Cancel</button>
+        <p className="text-sm font-semibold text-white">Editar Perfil</p>
+        <button onClick={onDone} className="text-xs text-white/30 hover:text-white/60 transition">✕ Cancelar</button>
       </div>
 
       <div className="p-5 space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs text-white/50 mb-1.5 block">First Name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="John" className={IN} />
+            <label className="text-xs text-white/50 mb-1.5 block">Nombre</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Juan" className={IN} />
           </div>
           <div>
-            <label className="text-xs text-white/50 mb-1.5 block">Last Name</label>
-            <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Smith" className={IN} />
+            <label className="text-xs text-white/50 mb-1.5 block">Apellido</label>
+            <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="García" className={IN} />
           </div>
         </div>
 
         <div>
-          <label className="text-xs text-white/50 mb-1.5 block">Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="john@example.com" className={IN} />
+          <label className="text-xs text-white/50 mb-1.5 block">Correo</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="juan@ejemplo.com" className={IN} />
         </div>
 
         <div>
-          <label className="text-xs text-white/50 mb-1.5 block">Phone</label>
+          <label className="text-xs text-white/50 mb-1.5 block">Teléfono</label>
           <div className="flex gap-2">
             <select value={phoneCountryCode} onChange={(e) => setPhoneCountryCode(e.target.value)} className={`${SEL} w-auto flex-shrink-0`}>
               {COUNTRY_CODES.map((c) => (
@@ -226,7 +226,7 @@ function ProfileEditForm({
         </div>
 
         <div>
-          <label className="text-xs text-white/50 mb-1.5 block">Investment Range</label>
+          <label className="text-xs text-white/50 mb-1.5 block">Rango de Inversión</label>
           <div className="grid grid-cols-1 gap-1.5">
             {INVESTMENT_RANGES.map((range) => (
               <button
@@ -247,12 +247,13 @@ function ProfileEditForm({
 
         {error && <p className="text-xs text-red-400">{error}</p>}
 
+
         <button
           onClick={submit}
           disabled={!valid || saving}
           className="w-full rounded-lg bg-[#2DD4D4]/10 border border-[#2DD4D4]/20 px-4 py-2.5 text-sm font-semibold text-[#2DD4D4] hover:bg-[#2DD4D4]/20 disabled:opacity-40 transition"
         >
-          {saving ? "Saving…" : "Save Profile"}
+          {saving ? "Guardando…" : "Guardar Perfil"}
         </button>
       </div>
     </div>

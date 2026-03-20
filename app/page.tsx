@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { usePrivy } from "@privy-io/react-auth";
+import { useRouter } from "next/navigation";
 
 // Replace with your actual Kick channel slug
 const KICK_CHANNEL = "zbricks";
@@ -9,36 +10,64 @@ const KICK_CHANNEL = "zbricks";
 const BENEFITS = [
   {
     icon: "🏘️",
-    title: "Get In Before the Market",
+    title: "Llega Antes que el Mercado",
     description:
-      "Access real estate opportunities at auction prices — before they reach traditional listings or public markets.",
+      "Accede a oportunidades inmobiliarias a precios de subasta — antes de que lleguen a los listados tradicionales o mercados públicos.",
   },
   {
     icon: "🔍",
-    title: "Full Transparency",
+    title: "Transparencia Total",
     description:
-      "Every bid is visible to all participants. No hidden negotiations, no backroom deals. What you see is what's real.",
+      "Cada oferta es visible para todos los participantes. Sin negociaciones ocultas, sin acuerdos de pasillo. Lo que ves es real.",
   },
   {
     icon: "⚡",
-    title: "Real-Time Bidding",
+    title: "Pujas en Tiempo Real",
     description:
-      "Live auctions with instant updates. Know exactly where you stand and react to every move as it happens.",
+      "Subastas en vivo con actualizaciones instantáneas. Sabe exactamente dónde estás y reacciona a cada movimiento en el momento.",
   },
   {
     icon: "🏛️",
-    title: "Open Participation",
+    title: "Participación Abierta",
     description:
-      "No brokers, no gatekeepers. Qualified investors bid directly on verified properties — fair and equal access.",
+      "Sin intermediarios, sin restricciones. Inversores calificados pujan directamente sobre propiedades verificadas — acceso justo e igualitario.",
+  },
+];
+
+const STEPS = [
+  {
+    number: "01",
+    title: "Sign In",
+    description: "Connect with your email, Google account, or crypto wallet — no prior experience needed.",
+  },
+  {
+    number: "02",
+    title: "Complete Your Profile",
+    description: "Verify your investor profile in under 2 minutes to unlock full access to live auctions.",
+  },
+  {
+    number: "03",
+    title: "Fund Your Account",
+    description: "Deposit USDC or ECOP to your wallet. Your balance is always visible and fully under your control.",
+  },
+  {
+    number: "04",
+    title: "Bid on Properties",
+    description: "Browse active auctions, place bids in real time, and track every move on-chain — fully transparent.",
   },
 ];
 
 export default function HomePage() {
-  const { ready, login } = usePrivy();
+  const { ready, authenticated, login } = usePrivy();
+  const router = useRouter();
 
   function handleAccess() {
     if (!ready) return;
-    login();
+    if (authenticated) {
+      router.push("/auctions");
+    } else {
+      login();
+    }
   }
 
   return (
@@ -95,7 +124,7 @@ export default function HomePage() {
                 }}
               />
               <span style={{ fontSize: 12, color: "#67e8f9", fontWeight: 600 }}>
-                Live Auctions — Open Now
+                Subastas en Vivo — Abiertas Ahora
               </span>
             </div>
 
@@ -109,9 +138,9 @@ export default function HomePage() {
                 marginBottom: 20,
               }}
             >
-              Invest in Real Estate
+              Invierte en Bienes Raíces
               <br />
-              <span style={{ color: "#67e8f9" }}>Before the Crowd Does</span>
+              <span style={{ color: "#67e8f9" }}>Antes que los Demás</span>
             </h1>
 
             {/* Subheadline */}
@@ -124,8 +153,8 @@ export default function HomePage() {
                 marginBottom: 40,
               }}
             >
-              Open, transparent, and real-time property auctions. Participate
-              directly — no agents, no hidden deals, no waiting.
+              Subastas inmobiliarias abiertas, transparentes y en tiempo real. Participa
+              directamente — sin agentes, sin acuerdos ocultos, sin esperas.
             </p>
 
             {/* ACCESS button */}
@@ -215,6 +244,39 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* ── How it works ────────────────────────────── */}
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: "0 auto",
+            padding: "0 24px 80px",
+            position: "relative",
+          }}
+        >
+          <div style={{ textAlign: "center", marginBottom: 48 }}>
+            <p style={{ fontSize: 12, color: "#67e8f9", fontWeight: 600, letterSpacing: 2, marginBottom: 12 }}>
+              HOW IT WORKS
+            </p>
+            <h2 style={{ fontSize: "clamp(1.6rem, 3vw, 2.2rem)", fontWeight: 800, letterSpacing: -0.5 }}>
+              From sign-up to winning bid in minutes
+            </h2>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+            {STEPS.map((step) => (
+              <div key={step.number} style={{ padding: "28px 24px", borderRadius: 18, background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#2DD4D4", letterSpacing: 2, marginBottom: 14 }}>{step.number}</div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, lineHeight: 1.3 }}>{step.title}</h3>
+                <p style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.6, margin: 0 }}>{step.description}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ textAlign: "center", marginTop: 40 }}>
+            <button onClick={handleAccess} disabled={!ready} style={{ padding: "14px 36px", borderRadius: 14, background: ready ? "#2DD4D4" : "rgba(45,212,212,0.35)", color: "#0f172a", fontSize: 15, fontWeight: 800, letterSpacing: 1, border: "none", cursor: ready ? "pointer" : "not-allowed" }}>
+              {authenticated ? "Go to Auctions →" : "Get Started →"}
+            </button>
+          </div>
+        </div>
+
         {/* ── Benefits ─────────────────────────────────── */}
         <div
           style={{
@@ -231,10 +293,10 @@ export default function HomePage() {
             }}
           >
             <p style={{ fontSize: 12, color: "#67e8f9", fontWeight: 600, letterSpacing: 2, marginBottom: 12 }}>
-              WHY ZBRICKS
+              POR QUÉ ZBRICKS
             </p>
             <h2 style={{ fontSize: "clamp(1.6rem, 3vw, 2.2rem)", fontWeight: 800, letterSpacing: -0.5 }}>
-              A smarter way to buy real estate
+              Una forma más inteligente de comprar bienes raíces
             </h2>
           </div>
 
@@ -282,7 +344,7 @@ export default function HomePage() {
           }}
         >
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", fontWeight: 500 }}>
-            Powered by
+            Impulsado por
           </span>
 
           {/* Base */}

@@ -34,9 +34,9 @@ export default function Header() {
   const isAdmin = walletAddress ? ADMIN_ADDRESSES.includes(walletAddress) : false;
 
   const navItems = [
-    { label: "Auctions", href: "/auctions" },
-    { label: "Properties", href: "/properties" },
-    { label: "My Account", href: "/account" },
+    { label: "Subastas", href: "/auctions" },
+    { label: "Propiedades", href: "/properties" },
+    { label: "Mi Cuenta", href: "/account" },
     ...(isAdmin ? [{ label: "Admin", href: "/admin" }] : []),
   ];
 
@@ -95,7 +95,7 @@ export default function Header() {
               <span style={{ color: "#67e8f9" }}>ZBrick</span>
             </div>
             <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: -2 }}>
-              Real Estate Auctions
+              Subastas Inmobiliarias
             </div>
           </div>
         </Link>
@@ -170,7 +170,7 @@ export default function Header() {
               e.currentTarget.style.color = "rgba(255,255,255,0.65)";
             }}
           >
-            Sign Out
+            Cerrar Sesión
           </button>
         ) : (
           <button
@@ -195,7 +195,7 @@ export default function Header() {
               e.currentTarget.style.boxShadow = "none";
             }}
           >
-            Sign In
+            Iniciar Sesión
           </button>
         )}
       </div>

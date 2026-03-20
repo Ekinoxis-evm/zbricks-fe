@@ -6,7 +6,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useUserProfile } from "@/lib/hooks/useUserProfile";
 import { INVESTMENT_RANGES, COUNTRY_CODES } from "@/types/user";
 
-const STEPS = ["Personal", "Contact", "Investment"] as const;
+const STEPS = ["Personal", "Contacto", "Inversión"] as const;
 type Step = 0 | 1 | 2;
 
 export default function OnboardingPage() {
@@ -100,7 +100,7 @@ export default function OnboardingPage() {
             Z
           </div>
           <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 13 }}>
-            Welcome to <span style={{ color: "#67e8f9", fontWeight: 700 }}>ZBricks</span>
+            Bienvenido a <span style={{ color: "#67e8f9", fontWeight: 700 }}>ZBricks</span>
           </div>
         </div>
 
@@ -157,7 +157,7 @@ export default function OnboardingPage() {
                   marginBottom: 6,
                 }}
               >
-                Tell us about yourself
+                Cuéntanos sobre ti
               </h2>
               <p
                 style={{
@@ -166,23 +166,23 @@ export default function OnboardingPage() {
                   marginBottom: 24,
                 }}
               >
-                This helps us personalize your experience.
+                Esto nos ayuda a personalizar tu experiencia.
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <Field label="First Name">
+                <Field label="Nombre">
                   <Input
                     value={name}
                     onChange={setName}
-                    placeholder="John"
+                    placeholder="Juan"
                     autoFocus
                   />
                 </Field>
-                <Field label="Last Name">
+                <Field label="Apellido">
                   <Input
                     value={lastName}
                     onChange={setLastName}
-                    placeholder="Smith"
+                    placeholder="García"
                   />
                 </Field>
               </div>
@@ -200,7 +200,7 @@ export default function OnboardingPage() {
                   marginBottom: 6,
                 }}
               >
-                Contact info
+                Información de contacto
               </h2>
               <p
                 style={{
@@ -209,7 +209,7 @@ export default function OnboardingPage() {
                   marginBottom: 24,
                 }}
               >
-                We will notify you about auction updates.
+                Te notificaremos sobre actualizaciones de subastas.
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -223,7 +223,7 @@ export default function OnboardingPage() {
                   />
                 </Field>
 
-                <Field label="Phone Number">
+                <Field label="Número de teléfono">
                   <div style={{ display: "flex", gap: 8 }}>
                     <select
                       value={phoneCountryCode}
@@ -273,7 +273,7 @@ export default function OnboardingPage() {
                   marginBottom: 6,
                 }}
               >
-                Investment profile
+                Perfil de inversión
               </h2>
               <p
                 style={{
@@ -282,7 +282,7 @@ export default function OnboardingPage() {
                   marginBottom: 24,
                 }}
               >
-                How much are you looking to invest in real estate?
+                ¿Cuánto estás buscando invertir en bienes raíces?
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -360,7 +360,7 @@ export default function OnboardingPage() {
                   cursor: "pointer",
                 }}
               >
-                Back
+                Atrás
               </button>
             )}
 
@@ -381,10 +381,10 @@ export default function OnboardingPage() {
               }}
             >
               {submitting
-                ? "Saving..."
+                ? "Guardando..."
                 : step < 2
-                ? "Continue"
-                : "Start Exploring"}
+                ? "Continuar"
+                : "Comenzar a Explorar"}
             </button>
           </div>
         </div>
@@ -398,7 +398,7 @@ export default function OnboardingPage() {
             color: "rgba(255,255,255,0.25)",
           }}
         >
-          Step {step + 1} of {STEPS.length}
+          Paso {step + 1} de {STEPS.length}
         </div>
       </div>
     </div>
