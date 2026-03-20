@@ -117,8 +117,8 @@ export default function AccountHoldings() {
           {/* ECOP */}
           <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-3">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-5 h-5 rounded-full bg-emerald-400/20 border border-emerald-400/30 flex items-center justify-center flex-shrink-0">
-                <span className="text-[8px] font-bold text-emerald-400">$</span>
+              <div className="w-5 h-5 rounded-full overflow-hidden flex-shrink-0">
+                <Image src="/tokens/ecop.png" alt="ECOP" width={20} height={20} />
               </div>
               <span className="text-xs text-white/50 font-medium">ECOP</span>
             </div>
