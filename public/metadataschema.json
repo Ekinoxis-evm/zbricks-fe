@@ -1,0 +1,120 @@
+{
+  "$comment": "ERC-721 Metadata JSON Schema extended for real estate NFTs with sections for location, interior, amenities, media, documents, auction status, and final details.",
+
+  "erc721_base": {
+    "title": "Asset Metadata",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Identifies the asset to which this NFT represents"
+      },
+      "description": {
+        "type": "string",
+        "description": "Describes the asset to which this NFT represents"
+      },
+      "image": {
+        "type": "string",
+        "description": "A URI pointing to a resource with mime type image/* representing the asset to which this NFT represents. Consider making any images at a width between 320 and 1080 pixels and aspect ratio between 1.91:1 and 4:5 inclusive."
+      }
+    }
+  },
+
+  "name": "",
+  "description": "",
+  "image": "",
+  "external_url": "",
+
+  "attributes": {
+    "Location": [
+      { "trait_type": "Country", "value": "" },
+      { "trait_type": "State", "value": "" },
+      { "trait_type": "City", "value": "" },
+      { "trait_type": "Neighborhood", "value": "" },
+      { "trait_type": "Address", "value": "" },
+      { "trait_type": "Zone", "value": "" },
+      { "trait_type": "Lot Size", "value": "", "display_type": "number" },
+      { "trait_type": "Orientation", "value": "" },
+      { "trait_type": "Topography", "value": "" },
+      { "trait_type": "View", "value": "" }
+    ],
+    "Interior": [
+      { "trait_type": "Total Living Area", "value": "", "display_type": "number" },
+      { "trait_type": "Levels", "value": 0, "display_type": "number" },
+      { "trait_type": "Bedrooms", "value": 0, "display_type": "number" },
+      { "trait_type": "Bathrooms", "value": 0, "display_type": "number" },
+      { "trait_type": "Half Baths", "value": 0, "display_type": "number" },
+      { "trait_type": "Kitchen Type", "value": "" },
+      { "trait_type": "Living Rooms", "value": 0, "display_type": "number" },
+      { "trait_type": "Dining Areas", "value": 0, "display_type": "number" },
+      { "trait_type": "Balconies", "value": 0, "display_type": "number" },
+      { "trait_type": "Study/Office", "value": "" },
+      { "trait_type": "Laundry Room", "value": "" },
+      { "trait_type": "Basement", "value": "" },
+      { "trait_type": "Attic", "value": "" }
+    ],
+    "Amenities": [
+      { "trait_type": "Pool Type", "value": "" },
+      { "trait_type": "Pool Size", "value": "", "display_type": "number" },
+      { "trait_type": "Gym", "value": "" },
+      { "trait_type": "Parking", "value": "", "display_type": "number" },
+      { "trait_type": "Cinema", "value": "" },
+      { "trait_type": "Wine Cellar", "value": "" },
+      { "trait_type": "BBQ Area", "value": "" },
+      { "trait_type": "Garden", "value": "" },
+      { "trait_type": "Social Area", "value": "" },
+      { "trait_type": "Smart Home", "value": "" },
+      { "trait_type": "Security System", "value": "" },
+      { "trait_type": "Solar Panels", "value": "" },
+      { "trait_type": "Water Treatment", "value": "" }
+    ]
+  },
+
+  "media": {
+    "lot_plan": "",
+    "aerial_view": "",
+    "drone_video": "",
+    "floor_plans": "",
+    "interior_living_room": "",
+    "interior_kitchen": "",
+    "interior_master_bedroom": "",
+    "interior_bathroom": "",
+    "360_walkthrough": "",
+    "amenities_images_pool": "",
+    "amenities_images_gym": "",
+    "amenities_images_cinema": "",
+    "amenities_images_wine_cellar": "",
+    "amenities_images_bbq_area": "",
+    "amenities_images_garden": "",
+    "amenities_images_social_area": "",
+    "smart_home_demo": ""
+  },
+
+  "documents": {
+    "legal_documents": "",
+    "property_deed": "",
+    "warranties": "",
+    "certificates": "",
+    "complete_photo_gallery": "",
+    "virtual_tour_360": ""
+  },
+
+  "auction_status": {
+    "phase": 0,
+    "bidding_open": false,
+    "auction_finalized": false,
+    "floor_price": 0,
+    "highest_bid": 0,
+    "bidder_lead": ""
+  },
+
+  "final_details": {
+    "ready_for_transfer": false,
+    "escrow_ready": false,
+    "inspections_complete": false,
+    "final_legal_review": "",
+    "owner": "",
+    "final_price": 0,
+    "sold_on": ""
+  }
+}
