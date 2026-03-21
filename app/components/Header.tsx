@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
+import Image from "next/image";
 
 const ADMIN_ADDRESSES = (process.env.NEXT_PUBLIC_ADMIN_ADDRESSES || "")
   .split(",")
@@ -74,22 +75,13 @@ export default function Header() {
             textDecoration: "none",
           }}
         >
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              background: "linear-gradient(135deg, #2DD4D4 0%, #0ea5e9 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 900,
-              fontSize: 16,
-              color: "black",
-            }}
-          >
-            Z
-          </div>
+          <Image
+            src="/zbricks.png"
+            alt="ZBricks"
+            width={36}
+            height={36}
+            style={{ borderRadius: 8 }}
+          />
           <div>
             <div style={{ fontWeight: 800, color: "white", fontSize: 16, letterSpacing: -0.3 }}>
               <span style={{ color: "#67e8f9" }}>ZBrick</span>

@@ -5,6 +5,10 @@ import Providers from "./providers";
 export const metadata: Metadata = {
   title: "ZBrick - Real Estate Auctions On-Chain",
   description: "Transparent, secure property auctions powered by smart contracts. Bid with USDC, track phases in real-time.",
+  icons: {
+    icon: "/zbricks.png",
+    apple: "/zbricks.png",
+  },
 };
 
 export default function RootLayout({
