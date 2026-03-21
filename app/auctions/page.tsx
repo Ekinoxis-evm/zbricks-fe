@@ -66,8 +66,6 @@ type StatusFilter = "Todas" | "Activa" | "Finalizada";
 
 // ============ HELPERS ============
 
-const shortAddr = (addr: string) => (addr && addr.length > 12 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr || "-");
-
 // Fallback image if metadata fails to load
 const FALLBACK_IMAGE = "/auctions/ALH_Taller_Edificio_E_Cam_01_2025_06_07.jpg";
 
@@ -302,31 +300,34 @@ export default function AuctionsPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return auctions.filter((a) => {
-      const isActive = !a.finalized && !a.paused;
-      const matchStatus =
-        statusFilter === "Todas"
-          ? true
-          : statusFilter === "Activa"
-          ? isActive
-          : a.finalized;
-      const matchQuery =
-        q.length === 0
-          ? true
-          : `${a.title ?? ""} ${a.location ?? ""} ${a.address}`.toLowerCase().includes(q);
-      return matchStatus && matchQuery;
-    });
+    return auctions
+      .filter((a) => {
+        const isActive = !a.finalized && !a.paused;
+        const matchStatus =
+          statusFilter === "Todas"
+            ? true
+            : statusFilter === "Activa"
+            ? isActive
+            : a.finalized;
+        const matchQuery =
+          q.length === 0
+            ? true
+            : `${a.title ?? ""} ${a.location ?? ""} ${a.address}`.toLowerCase().includes(q);
+        return matchStatus && matchQuery;
+      })
+      .sort((a, b) => {
+        const aActive = !a.finalized && !a.paused ? 0 : 1;
+        const bActive = !b.finalized && !b.paused ? 0 : 1;
+        return aActive - bActive;
+      });
   }, [auctions, statusFilter, search]);
-
-  const activeCount = auctions.filter((a) => !a.finalized && !a.paused).length;
-  const finalizedCount = auctions.filter((a) => a.finalized).length;
 
   if (loading) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent mb-4" />
-          <div className="text-lg opacity-80">Cargando subastas desde {CHAIN_META.chainName}...</div>
+          <div className="text-lg opacity-80">Cargando subastas...</div>
         </div>
       </main>
     );
@@ -336,158 +337,97 @@ export default function AuctionsPage() {
     <main className="min-h-screen bg-black text-white">
       <Header />
 
+      <div className="max-w-[1200px] mx-auto px-4 py-6 space-y-6">
 
-      {/* ====== CONTENT ====== */}
-      <section className="px-4 py-6">
-        <div className="max-w-[1200px] mx-auto">
-          <div className="flex gap-3 flex-wrap items-center mb-5">
-            <div className="text-gray-400 text-sm">
-              {auctions.length} subastas disponibles
-            </div>
-
-            <div className="flex-1" />
-
-            <button
-              onClick={() => fetchAuctions()}
-              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
-            >
-              Actualizar
-            </button>
-
-            <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-white/10 bg-white/[0.03] min-w-[280px]">
-              <span className="text-gray-400 text-xs">Buscar</span>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Dirección, título..."
-                className="flex-1 bg-transparent border-none outline-none text-white text-sm"
-              />
-            </div>
+        {/* ── Kick live stream ── */}
+        <div
+          className="relative w-full rounded-2xl overflow-hidden border border-white/10"
+          style={{ aspectRatio: "16/9", background: "#0a0a0a" }}
+        >
+          <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 rounded-full bg-black/70 border border-white/10 px-2.5 py-1 backdrop-blur-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-[11px] font-bold text-white tracking-wide">LIVE</span>
           </div>
-
-          <div className="grid grid-cols-[280px_1fr] gap-4 marketLayout">
-            <aside className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 h-fit">
-              <div className="font-black mb-2.5">Filtros</div>
-              <div className="text-xs text-gray-400 mb-2">Estado</div>
-              <div className="flex gap-2 flex-wrap">
-                <Chip active={statusFilter === "Todas"} onClick={() => setStatusFilter("Todas")}>
-                  Todas
-                </Chip>
-                <Chip active={statusFilter === "Activa"} onClick={() => setStatusFilter("Activa")}>
-                  Activas
-                </Chip>
-                <Chip active={statusFilter === "Finalizada"} onClick={() => setStatusFilter("Finalizada")}>
-                  Finalizadas
-                </Chip>
-              </div>
-
-              <div className="mt-3.5 pt-3.5 border-t border-white/[0.08]">
-                <div className="text-xs text-gray-400 mb-2">Resumen</div>
-                <div className="grid gap-2">
-                  <MiniStat label="Total" value={String(auctions.length)} />
-                  <MiniStat label="Activas" value={String(activeCount)} />
-                  <MiniStat label="Finalizadas" value={String(finalizedCount)} />
-                </div>
-              </div>
-
-              <div className="mt-3.5 pt-3.5 border-t border-white/[0.08]">
-                <div className="text-xs text-gray-400 mb-2">Contratos</div>
-                <div className="space-y-2 text-xs">
-                  <div>
-                    <div className="text-white/50 mb-1">Factory</div>
-                    <a
-                      href={`${CHAIN_META.explorer}/address/${CONTRACTS.AuctionFactory}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-cyan-400 hover:underline flex items-center gap-1"
-                    >
-                      {shortAddr(CONTRACTS.AuctionFactory)}
-                      <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                    </a>
-                  </div>
-                  <div>
-                    <div className="text-white/50 mb-1">USDC</div>
-                    <a
-                      href={`${CHAIN_META.explorer}/address/${CONTRACTS.USDC}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-cyan-400 hover:underline flex items-center gap-1"
-                    >
-                      {shortAddr(CONTRACTS.USDC)}
-                      <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                    </a>
-                  </div>
-                  <div>
-                    <div className="text-white/50 mb-1">HouseNFT</div>
-                    <a
-                      href={`${CHAIN_META.explorer}/address/${CONTRACTS.HouseNFT}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-cyan-400 hover:underline flex items-center gap-1"
-                    >
-                      {shortAddr(CONTRACTS.HouseNFT)}
-                      <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                    </a>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3.5 p-3 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] text-gray-200 text-[13px] leading-tight">
-                <b className="text-cyan-400">Consejo:</b> Haz clic en cualquier propiedad para realizar una oferta con USDC.
-              </div>
-            </aside>
-
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
-              {filtered.map((auction) => (
-                  <Link
-                    key={auction.address}
-                    href={`/biddings?auction=${auction.address}`}
-                    className="block no-underline text-inherit"
-                  >
-                    <PropertyCard
-                      variant="compact"
-                      metadata={auction.metadata ?? null}
-                      currentPhase={auction.currentPhase}
-                      tokenId={auction.tokenId}
-                      auctionAddress={auction.address}
-                      auctionData={{
-                        floorPrice: auction.floorPrice,
-                        currentHighBid: auction.currentHighBid,
-                        currentLeader: auction.currentLeader,
-                        bidderCount: auction.bidderCount,
-                        timeRemaining: auction.timeRemaining,
-                        finalized: auction.finalized,
-                        paused: auction.paused,
-                      }}
-                      fallbackImage={auction.image || FALLBACK_IMAGE}
-                    />
-                  </Link>
-              ))}
-
-              {filtered.length === 0 && (
-                <div className="col-span-full p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-gray-400 text-center">
-                  No se encontraron subastas con los filtros actuales.
-                </div>
-              )}
-            </div>
-          </div>
+          <iframe
+            src="https://player.kick.com/zbricks"
+            width="100%"
+            height="100%"
+            className="block border-none"
+            allowFullScreen
+            scrolling="no"
+          />
         </div>
-      </section>
 
+        {/* ── Filters bar ── */}
+        <div className="flex gap-2 flex-wrap items-center">
+          <Chip active={statusFilter === "Todas"} onClick={() => setStatusFilter("Todas")}>
+            Todas
+          </Chip>
+          <Chip active={statusFilter === "Activa"} onClick={() => setStatusFilter("Activa")}>
+            Activas
+          </Chip>
+          <Chip active={statusFilter === "Finalizada"} onClick={() => setStatusFilter("Finalizada")}>
+            Finalizadas
+          </Chip>
 
-      <style jsx>{`
-        @media (max-width: 980px) {
-          .marketLayout {
-            grid-template-columns: 1fr !important;
-          }
-        }
-      `}</style>
+          <div className="flex-1" />
+
+          <span className="text-gray-500 text-xs">{filtered.length} subasta{filtered.length !== 1 ? "s" : ""}</span>
+
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/[0.03]">
+            <span className="text-gray-400 text-xs">Buscar</span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Título, dirección..."
+              className="bg-transparent border-none outline-none text-white text-sm w-44"
+            />
+          </div>
+
+          <button
+            onClick={() => fetchAuctions()}
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 transition-colors"
+          >
+            Actualizar
+          </button>
+        </div>
+
+        {/* ── Auction cards ── */}
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
+          {filtered.map((auction) => (
+            <Link
+              key={auction.address}
+              href={`/biddings?auction=${auction.address}`}
+              className="block no-underline text-inherit"
+            >
+              <PropertyCard
+                variant="compact"
+                metadata={auction.metadata ?? null}
+                currentPhase={auction.currentPhase}
+                tokenId={auction.tokenId}
+                auctionAddress={auction.address}
+                auctionData={{
+                  floorPrice: auction.floorPrice,
+                  currentHighBid: auction.currentHighBid,
+                  currentLeader: auction.currentLeader,
+                  bidderCount: auction.bidderCount,
+                  timeRemaining: auction.timeRemaining,
+                  finalized: auction.finalized,
+                  paused: auction.paused,
+                }}
+                fallbackImage={auction.image || FALLBACK_IMAGE}
+              />
+            </Link>
+          ))}
+
+          {filtered.length === 0 && (
+            <div className="col-span-full p-8 rounded-2xl border border-white/10 bg-white/[0.03] text-gray-400 text-center">
+              No se encontraron subastas con los filtros actuales.
+            </div>
+          )}
+        </div>
+
+      </div>
     </main>
   );
 }
@@ -518,11 +458,3 @@ function Chip({
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/25 text-[13px]">
-      <span className="text-gray-400">{label}</span>
-      <b className="text-white">{value}</b>
-    </div>
-  );
-}

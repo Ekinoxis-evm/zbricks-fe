@@ -58,7 +58,7 @@ export default function OnboardingPage() {
         phoneNumber: phoneNumber.trim(),
         expectedInvestment,
       });
-      router.push("/auctions");
+      router.push("/account");
     } finally {
       setSubmitting(false);
     }

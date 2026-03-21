@@ -79,7 +79,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
     if (!ready || profileLoading) return;
 
     if (authenticated && isOnboarded && isLandingPage) {
-      router.push("/auctions");
+      router.push("/account");
       return;
     }
 
@@ -99,7 +99,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
   if (isProtected && (!authenticated || !isOnboarded)) return <LoadingScreen />;
 
   if (isOnboardingPage && authenticated && isOnboarded) {
-    router.push("/auctions");
+    router.push("/account");
     return <LoadingScreen />;
   }
 
