@@ -121,7 +121,7 @@ const shortAddr = (s: string) => (s && s.length > 12 ? `${s.slice(0, 6)}...${s.s
 const formatTimeRemaining = (seconds: bigint | null) => {
   if (seconds === null) return "-";
   const s = Number(seconds);
-  if (s <= 0) return "Phase complete";
+  if (s <= 0) return "Fase completada";
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
@@ -313,19 +313,19 @@ function AuctionBidPageContent() {
   const handleApproveUsdc = async () => {
     const amount = parseFloat(bidInput);
     if (isNaN(amount) || amount <= 0) {
-      pushToast({ type: "error", title: "Enter a valid amount first" });
+      pushToast({ type: "error", title: "Ingresa un monto válido primero" });
       return;
     }
 
     if (!auctionAddress) {
-      pushToast({ type: "error", title: "Missing auction address" });
+      pushToast({ type: "error", title: "Falta la dirección de la subasta" });
       return;
     }
 
     setIsLoading(true);
     try {
       const approveAmount = parseUnits((amount * 2).toFixed(6), 6);
-      pushToast({ type: "info", title: "Approve USDC pending...", detail: "Approve in your wallet" });
+      pushToast({ type: "info", title: "Aprobación de USDC pendiente...", detail: "Aprueba en tu billetera" });
 
       const hash = await writeContractAsync({
         address: contracts.USDC,
@@ -334,11 +334,11 @@ function AuctionBidPageContent() {
         args: [auctionAddress, approveAmount],
       });
 
-      pushToast({ type: "success", title: "Approve USDC confirmed!", detail: hash ? `TX: ${hash.slice(0, 14)}...` : undefined });
+      pushToast({ type: "success", title: "¡Aprobación de USDC confirmada!", detail: hash ? `TX: ${hash.slice(0, 14)}...` : undefined });
       await refreshData();
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Transaction failed";
-      pushToast({ type: "error", title: "Approve USDC", detail: msg });
+      const msg = error instanceof Error ? error.message : "Transacción fallida";
+      pushToast({ type: "error", title: "Aprobar USDC", detail: msg });
     } finally {
       setIsLoading(false);
     }
@@ -358,19 +358,19 @@ function AuctionBidPageContent() {
     }
 
     if (auctionParticipationFee === null || auctionParticipationFee === 0n) {
-      pushToast({ type: "info", title: "No participation fee required" });
+      pushToast({ type: "info", title: "No se requiere tarifa de participación" });
       return;
     }
 
     if (userUsdcBalance !== null && auctionParticipationFee > userUsdcBalance) {
-      pushToast({ type: "error", title: `Insufficient balance. Need ${formatUsdc(auctionParticipationFee)} USDC` });
+      pushToast({ type: "error", title: `Saldo insuficiente. Necesitas ${formatUsdc(auctionParticipationFee)} USDC` });
       return;
     }
 
     setIsLoading(true);
     try {
       if (userUsdcAllowance !== null && auctionParticipationFee > userUsdcAllowance) {
-        pushToast({ type: "info", title: "Approving USDC..." });
+        pushToast({ type: "info", title: "Aprobando USDC..." });
         await writeContractAsync({
           address: contracts.USDC,
           abi: erc20Abi,
@@ -380,18 +380,18 @@ function AuctionBidPageContent() {
         await refreshData();
       }
 
-      pushToast({ type: "info", title: "Pay Participation Fee pending...", detail: "Approve in your wallet" });
+      pushToast({ type: "info", title: "Pago de tarifa pendiente...", detail: "Aprueba en tu billetera" });
       const hash = await writeContractAsync({
         address: auctionAddress,
         abi: auctionAbi,
         functionName: "payParticipationFee",
       });
 
-      pushToast({ type: "success", title: "Pay Participation Fee confirmed!", detail: hash ? `TX: ${hash.slice(0, 14)}...` : undefined });
+      pushToast({ type: "success", title: "¡Pago de tarifa confirmado!", detail: hash ? `TX: ${hash.slice(0, 14)}...` : undefined });
       await refreshData();
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Transaction failed";
-      pushToast({ type: "error", title: "Pay Participation Fee", detail: msg });
+      const msg = error instanceof Error ? error.message : "Transacción fallida";
+      pushToast({ type: "error", title: "Pagar tarifa de participación", detail: msg });
     } finally {
       setIsLoading(false);
     }
@@ -408,30 +408,30 @@ function AuctionBidPageContent() {
     }
 
     if (!auctionAddress) {
-      setBidError("Missing auction address.");
+      setBidError("Falta la dirección de la subasta.");
       return;
     }
 
     if (auctionParticipationFee !== null && auctionParticipationFee > 0n && !hasPaidParticipationFee) {
-      setBidError(`You must pay the participation fee of ${formatUsdc(auctionParticipationFee)} USDC first.`);
+      setBidError(`Debes pagar la tarifa de participación de ${formatUsdc(auctionParticipationFee)} USDC primero.`);
       return;
     }
 
     const amount = parseFloat(bidInput);
     if (isNaN(amount) || amount <= 0) {
-      setBidError("Enter a valid bid amount.");
+      setBidError("Ingresa un monto de oferta válido.");
       return;
     }
 
     const bidAmount = parseUnits(amount.toFixed(6), 6);
 
     if (userUsdcBalance !== null && bidAmount > userUsdcBalance) {
-      setBidError(`Insufficient USDC balance. You have ${formatUsdc(userUsdcBalance)} USDC.`);
+      setBidError(`Saldo USDC insuficiente. Tienes ${formatUsdc(userUsdcBalance)} USDC.`);
       return;
     }
 
     if (userUsdcAllowance !== null && bidAmount > userUsdcAllowance) {
-      setBidError("Please approve USDC first.");
+      setBidError("Por favor aprueba USDC primero.");
       return;
     }
 
@@ -439,19 +439,19 @@ function AuctionBidPageContent() {
     const newTotalBidCalc = currentUserBid + bidAmount;
 
     if (auctionFloorPrice !== null && newTotalBidCalc < auctionFloorPrice) {
-      setBidError(`Your total bid must be at least ${formatUsdc(auctionFloorPrice)} USDC (floor price).`);
+      setBidError(`Tu oferta total debe ser al menos ${formatUsdc(auctionFloorPrice)} USDC (precio base).`);
       return;
     }
 
     if (auctionHighBid !== null && !isLeader && newTotalBidCalc <= auctionHighBid) {
       const minRequired = auctionHighBid + (auctionHighBid * 5n / 100n);
-      setBidError(`Your total bid must exceed ${formatUsdc(minRequired)} USDC to become the leader.`);
+      setBidError(`Tu oferta total debe superar ${formatUsdc(minRequired)} USDC para liderar.`);
       return;
     }
 
     setIsLoading(true);
     try {
-      pushToast({ type: "info", title: "Place Bid pending...", detail: "Approve in your wallet" });
+      pushToast({ type: "info", title: "Oferta pendiente...", detail: "Aprueba en tu billetera" });
       const hash = await writeContractAsync({
         address: auctionAddress,
         abi: auctionAbi,
@@ -459,12 +459,12 @@ function AuctionBidPageContent() {
         args: [bidAmount],
       });
 
-      pushToast({ type: "success", title: "Place Bid confirmed!", detail: hash ? `TX: ${hash.slice(0, 14)}...` : undefined });
+      pushToast({ type: "success", title: "¡Oferta confirmada!", detail: hash ? `TX: ${hash.slice(0, 14)}...` : undefined });
       setBidInput("");
       await refreshData();
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Transaction failed";
-      pushToast({ type: "error", title: "Place Bid", detail: msg });
+      const msg = error instanceof Error ? error.message : "Transacción fallida";
+      pushToast({ type: "error", title: "Realizar oferta", detail: msg });
     } finally {
       setIsLoading(false);
     }
@@ -474,7 +474,7 @@ function AuctionBidPageContent() {
 
   const handleWithdrawBid = async () => {
     if (!canWithdraw) {
-      pushToast({ type: "error", title: "Cannot withdraw - you may be the leader" });
+      pushToast({ type: "error", title: "No puedes retirar — puedes ser el líder" });
       return;
     }
 
@@ -485,18 +485,18 @@ function AuctionBidPageContent() {
 
     setIsLoading(true);
     try {
-      pushToast({ type: "info", title: "Withdraw Bid pending...", detail: "Approve in your wallet" });
+      pushToast({ type: "info", title: "Retiro de oferta pendiente...", detail: "Aprueba en tu billetera" });
       const hash = await writeContractAsync({
         address: auctionAddress,
         abi: auctionAbi,
         functionName: "withdrawBid",
       });
 
-      pushToast({ type: "success", title: "Withdraw Bid confirmed!", detail: hash ? `TX: ${hash.slice(0, 14)}...` : undefined });
+      pushToast({ type: "success", title: "¡Retiro de oferta confirmado!", detail: hash ? `TX: ${hash.slice(0, 14)}...` : undefined });
       await refreshData();
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Transaction failed";
-      pushToast({ type: "error", title: "Withdraw Bid", detail: msg });
+      const msg = error instanceof Error ? error.message : "Transacción fallida";
+      pushToast({ type: "error", title: "Retirar oferta", detail: msg });
     } finally {
       setIsLoading(false);
     }
@@ -521,17 +521,17 @@ function AuctionBidPageContent() {
               onClick={() => router.push("/auctions")}
               className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white/80 mb-2"
             >
-              <span>&larr;</span> Back to Auctions
+              <span>&larr;</span> Volver a Subastas
             </button>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/3 px-3 py-1 text-xs text-white/75">
               <IconShield className="h-4 w-4 text-[#7DEAEA]" />
-              Live Auction - On-Chain
+              Subasta en Vivo
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight">
-              Property Auction
+              Subasta de Propiedad
             </h1>
             <p className="mt-1 text-sm text-white/55">
-              Bid with USDC on {chainMeta.chainName}
+              Puja con USDC en {chainMeta.chainName}
             </p>
           </div>
         </div>
@@ -539,13 +539,13 @@ function AuctionBidPageContent() {
         {/* Error: No auction address */}
         {!auctionAddress && (
           <div className={`rounded-3xl ${ui.card} p-8 text-center`}>
-            <div className="text-red-400 text-lg font-semibold mb-2">Invalid Auction</div>
-            <p className="text-white/60 mb-4">No auction address provided in the URL.</p>
+            <div className="text-red-400 text-lg font-semibold mb-2">Subasta Inválida</div>
+            <p className="text-white/60 mb-4">No se proporcionó dirección de subasta en la URL.</p>
             <button
               onClick={() => router.push("/auctions")}
               className="rounded-xl bg-cyan-500 px-6 py-3 font-semibold text-black hover:brightness-110"
             >
-              View All Auctions
+              Ver Todas las Subastas
             </button>
           </div>
         )}
@@ -585,13 +585,13 @@ function AuctionBidPageContent() {
             {/* Auction Status */}
             <div className={`rounded-3xl ${ui.card} p-6`}>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Auction Status</h2>
+                <h2 className="text-lg font-semibold">Estado de la Subasta</h2>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={refreshData}
                     className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10"
                   >
-                    Refresh
+                    Actualizar
                   </button>
                   {lastRefreshed && (
                     <span className="text-xs text-white/40">
@@ -603,7 +603,7 @@ function AuctionBidPageContent() {
 
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div className={`rounded-2xl ${ui.cardInner} p-4 sm:col-span-2 lg:col-span-3`}>
-                  <div className="text-xs text-white/50 mb-2">Auction Contract</div>
+                  <div className="text-xs text-white/50 mb-2">Contrato de Subasta</div>
                   <a
                     href={`${chainMeta.explorer}/address/${auctionAddress}`}
                     target="_blank"
@@ -618,7 +618,7 @@ function AuctionBidPageContent() {
                 </div>
 
                 <div className={`rounded-2xl ${ui.cardInner} p-4 sm:col-span-2 lg:col-span-3`}>
-                  <div className="text-xs text-white/50 mb-2">Current Phase</div>
+                  <div className="text-xs text-white/50 mb-2">Fase Actual</div>
                   {auctionPhase !== null ? (
                     <PhaseProgressBar phase={auctionPhase} variant="expanded" />
                   ) : (
@@ -627,17 +627,17 @@ function AuctionBidPageContent() {
                 </div>
 
                 <div className={`rounded-2xl ${ui.cardInner} p-4`}>
-                  <div className="text-xs text-white/50 mb-1">High Bid</div>
+                  <div className="text-xs text-white/50 mb-1">Oferta Más Alta</div>
                   <div className="text-lg font-semibold text-emerald-400">
                     {formatUsdc(auctionHighBid)} USDC
                   </div>
                 </div>
 
                 <div className={`rounded-2xl ${ui.cardInner} p-4`}>
-                  <div className="text-xs text-white/50 mb-1">Current Leader</div>
+                  <div className="text-xs text-white/50 mb-1">Líder Actual</div>
                   <div className="text-sm font-mono text-white/80">
                     {isLeader ? (
-                      <span className="text-emerald-400">You!</span>
+                      <span className="text-emerald-400">¡Tú!</span>
                     ) : (
                       shortAddr(auctionLeader)
                     )}
@@ -645,7 +645,7 @@ function AuctionBidPageContent() {
                 </div>
 
                 <div className={`rounded-2xl ${ui.cardInner} p-4`}>
-                  <div className="text-xs text-white/50 mb-1">Time Remaining</div>
+                  <div className="text-xs text-white/50 mb-1">Tiempo Restante</div>
                   <div className="flex items-center gap-2">
                     <IconClock className="h-4 w-4 text-cyan-400" />
                     <span className="font-semibold">{formatTimeRemaining(auctionTimeRemaining)}</span>
@@ -653,22 +653,22 @@ function AuctionBidPageContent() {
                 </div>
 
                 <div className={`rounded-2xl ${ui.cardInner} p-4`}>
-                  <div className="text-xs text-white/50 mb-1">Floor Price</div>
+                  <div className="text-xs text-white/50 mb-1">Precio Base</div>
                   <div className="text-sm font-semibold">{formatUsdc(auctionFloorPrice)} USDC</div>
                 </div>
 
                 <div className={`rounded-2xl ${ui.cardInner} p-4`}>
-                  <div className="text-xs text-white/50 mb-1">Participation Fee</div>
+                  <div className="text-xs text-white/50 mb-1">Tarifa de Participación</div>
                   <div className="text-sm font-semibold">{formatUsdc(auctionParticipationFee)} USDC</div>
                 </div>
 
                 <div className={`rounded-2xl ${ui.cardInner} p-4`}>
-                  <div className="text-xs text-white/50 mb-1">Min Increment</div>
+                  <div className="text-xs text-white/50 mb-1">Incremento Mínimo</div>
                   <div className="text-sm font-semibold">{auctionMinIncrement ? `${auctionMinIncrement}%` : "-"}</div>
                 </div>
 
                 <div className={`rounded-2xl ${ui.cardInner} p-4`}>
-                  <div className="text-xs text-white/50 mb-1">Total Bidders</div>
+                  <div className="text-xs text-white/50 mb-1">Total de Postores</div>
                   <div className="text-sm font-semibold">{auctionBidderCount ?? "-"}</div>
                 </div>
               </div>
@@ -677,17 +677,17 @@ function AuctionBidPageContent() {
               <div className="flex flex-wrap gap-2 mt-4">
                 {auctionFinalized && (
                   <span className="rounded-full bg-emerald-500/20 text-emerald-300 px-3 py-1 text-xs">
-                    Auction Finalized
+                    Subasta Finalizada
                   </span>
                 )}
                 {auctionPaused && (
                   <span className="rounded-full bg-red-500/20 text-red-300 px-3 py-1 text-xs">
-                    Auction Paused
+                    Subasta Pausada
                   </span>
                 )}
                 {auctionWinner && auctionWinner !== zeroAddress && (
                   <span className="rounded-full bg-cyan-500/20 text-cyan-300 px-3 py-1 text-xs">
-                    Winner: {shortAddr(auctionWinner)}
+                    Ganador: {shortAddr(auctionWinner)}
                   </span>
                 )}
               </div>
@@ -697,29 +697,29 @@ function AuctionBidPageContent() {
             <div className={`rounded-3xl ${ui.card} p-6`}>
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                 <IconGavel className="h-5 w-5 text-cyan-400" />
-                Place Your Bid
+                Realiza tu Oferta
               </h2>
 
               {!hasSession ? (
                 <div className="text-center py-8">
-                  <p className="text-white/60 mb-4">Connect your wallet to start bidding</p>
+                  <p className="text-white/60 mb-4">Conecta tu billetera para comenzar a pujar</p>
                   <button
                     onClick={() => router.push("/")}
                     className="rounded-xl bg-cyan-500 px-6 py-3 font-semibold text-black hover:brightness-110"
                   >
-                    Connect Wallet
+                    Conectar Billetera
                   </button>
                 </div>
               ) : auctionFinalized ? (
                 <div className="text-center py-8">
-                  <p className="text-white/60">This auction has ended.</p>
+                  <p className="text-white/60">Esta subasta ha finalizado.</p>
                   {isWinner && (
-                    <p className="text-emerald-400 mt-2 font-semibold">Congratulations! You won!</p>
+                    <p className="text-emerald-400 mt-2 font-semibold">¡Felicitaciones! ¡Ganaste!</p>
                   )}
                 </div>
               ) : auctionPaused ? (
                 <div className="text-center py-8">
-                  <p className="text-amber-400">Bidding is temporarily paused.</p>
+                  <p className="text-amber-400">Las pujas están temporalmente pausadas.</p>
                 </div>
               ) : (
                 <>
@@ -731,9 +731,9 @@ function AuctionBidPageContent() {
                           <IconShield className="h-5 w-5 text-yellow-400" />
                         </div>
                         <div className="flex-1">
-                          <div className="text-sm font-semibold text-yellow-400">Participation Fee Required</div>
+                          <div className="text-sm font-semibold text-yellow-400">Tarifa de Participación Requerida</div>
                           <div className="text-xs text-yellow-300/80 mt-1">
-                            Pay {formatUsdc(auctionParticipationFee)} USDC to participate in this auction
+                            Paga {formatUsdc(auctionParticipationFee)} USDC para participar en esta subasta
                           </div>
                         </div>
                       </div>
@@ -742,7 +742,7 @@ function AuctionBidPageContent() {
                         disabled={isLoading}
                         className="mt-3 w-full rounded-lg bg-yellow-500 px-4 py-2 text-sm font-semibold text-black hover:brightness-110 disabled:opacity-50"
                       >
-                        {isLoading ? "Processing..." : `Pay ${formatUsdc(auctionParticipationFee)} USDC Fee`}
+                        {isLoading ? "Procesando..." : `Pagar tarifa de ${formatUsdc(auctionParticipationFee)} USDC`}
                       </button>
                     </div>
                   )}
@@ -752,7 +752,7 @@ function AuctionBidPageContent() {
                     <div className="mb-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3">
                       <div className="flex items-center gap-2 text-sm text-emerald-400">
                         <IconShield className="h-4 w-4" />
-                        <span className="font-semibold">Participation fee paid</span>
+                        <span className="font-semibold">Tarifa de participación pagada</span>
                       </div>
                     </div>
                   )}
@@ -762,12 +762,12 @@ function AuctionBidPageContent() {
                     <div className="mb-4 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="text-xs text-cyan-300">Your Current Bid</div>
+                          <div className="text-xs text-cyan-300">Tu Oferta Actual</div>
                           <div className="text-xl font-bold text-cyan-400">{formatUsdc(userBid)} USDC</div>
                         </div>
                         {isLeader && (
                           <span className="rounded-full bg-emerald-500/20 text-emerald-300 px-3 py-1 text-sm font-semibold">
-                            You&apos;re Leading!
+                            ¡Estás Liderando!
                           </span>
                         )}
                       </div>
@@ -778,14 +778,14 @@ function AuctionBidPageContent() {
                   <div className="space-y-4">
                     <div>
                       <label className="text-xs text-white/50 mb-2 block">
-                        Add to your bid (USDC)
+                        Añade a tu oferta (USDC)
                       </label>
                       <div className="relative">
                         <input
                           type="number"
                           min="0"
                           step="0.01"
-                          placeholder="Enter amount..."
+                          placeholder="Ingresa el monto..."
                           value={bidInput}
                           onChange={(e) => {
                             setBidInput(e.target.value);
@@ -801,7 +801,7 @@ function AuctionBidPageContent() {
 
                     {bidAmountParsed > 0 && (
                       <div className="text-sm text-white/60">
-                        New total bid: <span className="text-cyan-400 font-semibold">{formatUsdc(newTotalBid)} USDC</span>
+                        Nueva oferta total: <span className="text-cyan-400 font-semibold">{formatUsdc(newTotalBid)} USDC</span>
                       </div>
                     )}
 
@@ -811,8 +811,8 @@ function AuctionBidPageContent() {
 
                     {/* Balance info */}
                     <div className="flex flex-wrap gap-4 text-xs text-white/50">
-                      <span>Balance: {formatUsdc(userUsdcBalance)} USDC</span>
-                      <span>Allowance: {formatUsdc(userUsdcAllowance)} USDC</span>
+                      <span>Saldo: {formatUsdc(userUsdcBalance)} USDC</span>
+                      <span>Límite aprobado: {formatUsdc(userUsdcAllowance)} USDC</span>
                     </div>
 
                     {/* Action buttons */}
@@ -826,12 +826,12 @@ function AuctionBidPageContent() {
                           {isLoading ? (
                             <>
                               <div className="h-5 w-5 animate-spin rounded-full border-2 border-black/20 border-t-black"></div>
-                              <span>Approving...</span>
+                              <span>Aprobando...</span>
                             </>
                           ) : (
                             <>
                               <IconShield className="h-5 w-5" />
-                              <span>Approve USDC</span>
+                              <span>Aprobar USDC</span>
                             </>
                           )}
                         </button>
@@ -844,12 +844,12 @@ function AuctionBidPageContent() {
                           {isLoading ? (
                             <>
                               <div className="h-5 w-5 animate-spin rounded-full border-2 border-black/20 border-t-black"></div>
-                              <span>Processing...</span>
+                              <span>Procesando...</span>
                             </>
                           ) : (
                             <>
                               <IconGavel className="h-5 w-5" />
-                              <span>Place Bid</span>
+                              <span>Realizar Oferta</span>
                             </>
                           )}
                         </button>
@@ -862,7 +862,7 @@ function AuctionBidPageContent() {
                           className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/50 bg-red-500/10 px-5 py-3 font-semibold text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
                         >
                           <IconWithdraw className="h-5 w-5" />
-                          Withdraw Bid
+                          Retirar Oferta
                         </button>
                       )}
                     </div>
@@ -879,71 +879,71 @@ function AuctionBidPageContent() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2 text-sm text-white/70">
                   <IconWallet className="h-4 w-4 text-cyan-400" />
-                  My Wallet
+                  Mi Billetera
                 </div>
                 <button
                   onClick={() => router.push(hasSession ? "/account" : "/")}
                   className={`rounded-xl px-3 py-1.5 text-xs ${ui.pillMuted} hover:bg-white/6`}
                 >
-                  {hasSession ? "View" : "Connect"}
+                  {hasSession ? "Ver" : "Conectar"}
                 </button>
               </div>
 
               {hasSession && walletAddress ? (
                 <div className="space-y-3">
                   <div className={`rounded-2xl ${ui.cardInner} p-3`}>
-                    <div className="text-[11px] text-white/50">Address</div>
+                    <div className="text-[11px] text-white/50">Dirección</div>
                     <div className="text-sm font-mono text-white/85">{shortAddr(walletAddress)}</div>
                   </div>
                   <div className={`rounded-2xl ${ui.cardInner} p-3`}>
-                    <div className="text-[11px] text-white/50">USDC Balance</div>
+                    <div className="text-[11px] text-white/50">Saldo USDC</div>
                     <div className="text-sm font-semibold text-white/85">
                       {formatUsdc(userUsdcBalance)} USDC
                     </div>
                   </div>
                   <div className={`rounded-2xl ${ui.cardInner} p-3`}>
-                    <div className="text-[11px] text-white/50">Your Bid</div>
+                    <div className="text-[11px] text-white/50">Tu Oferta</div>
                     <div className="text-sm font-semibold text-cyan-400">
-                      {userBid && userBid > 0n ? `${formatUsdc(userBid)} USDC` : "No bid yet"}
+                      {userBid && userBid > 0n ? `${formatUsdc(userBid)} USDC` : "Sin oferta aún"}
                     </div>
                   </div>
                 </div>
               ) : (
                 <div className="text-sm text-white/50">
-                  Connect your wallet to participate in the auction.
+                  Conecta tu billetera para participar en la subasta.
                 </div>
               )}
             </div>
 
             {/* How It Works */}
             <div className={`rounded-3xl ${ui.card} p-5`}>
-              <h3 className="text-sm font-semibold mb-3">How Bidding Works</h3>
+              <h3 className="text-sm font-semibold mb-3">Cómo Funcionan las Pujas</h3>
               <ul className="space-y-2 text-xs text-white/60">
                 <li className="flex gap-2">
                   <span className="text-cyan-400">1.</span>
-                  <span>Bids are cumulative - each bid adds to your total</span>
+                  <span>Las ofertas son acumulativas — cada oferta se suma a tu total</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400">2.</span>
-                  <span>Only the winner pays; losers get full refunds</span>
+                  <span>Solo el ganador paga; los demás reciben reembolso completo</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400">3.</span>
-                  <span>You can withdraw your bid anytime (unless leading)</span>
+                  <span>Puedes retirar tu oferta en cualquier momento (a menos que lideres)</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400">4.</span>
-                  <span>Auction progresses through 3 reveal phases</span>
+                  <span>La subasta avanza por 3 fases de revelación</span>
                 </li>
               </ul>
             </div>
 
             {/* Contract Info */}
             <div className={`rounded-3xl ${ui.card} p-5`}>
-              <h3 className="text-sm font-semibold mb-3">Contract Info</h3>
+              <h3 className="text-sm font-semibold mb-3">Info del Contrato</h3>
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-white/50">Auction</span>
+                  <span className="text-white/50">Subasta</span>
                   <a
                     href={`${chainMeta.explorer}/address/${auctionAddress}`}
                     target="_blank"
@@ -955,7 +955,7 @@ function AuctionBidPageContent() {
                 </div>
                 {auctionAddressParam && (
                   <div className="text-[10px] text-white/40 text-right">
-                    Custom auction
+                    Subasta personalizada
                   </div>
                 )}
                 <div className="flex justify-between">
@@ -973,7 +973,7 @@ function AuctionBidPageContent() {
                   </a>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-white/50">Network</span>
+                  <span className="text-white/50">Red</span>
                   <span className="text-white/80">{chainMeta.chainName}</span>
                 </div>
               </div>
@@ -1008,7 +1008,7 @@ function AuctionBidPageContent() {
           <div className="rounded-xl bg-white/10 px-6 py-4 text-sm">
             <div className="flex items-center gap-3">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
-              Processing transaction...
+              Procesando transacción...
             </div>
           </div>
         </div>
@@ -1022,7 +1022,7 @@ function AuctionLoadingFallback() {
     <div className="min-h-screen bg-[#07090A] text-white flex items-center justify-center">
       <div className="text-center">
         <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent mb-4" />
-        <div className="text-lg opacity-80">Loading auction...</div>
+        <div className="text-lg opacity-80">Cargando subasta...</div>
       </div>
     </div>
   );

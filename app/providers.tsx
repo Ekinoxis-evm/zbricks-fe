@@ -55,6 +55,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           appearance: {
             theme: "dark",
             accentColor: "#2DD4D4",
+            landingHeader: "Accede a ZBricks",
+            logo: "https://zbricks.app/zbricks.png",
           },
           embeddedWallets: {
             ethereum: {

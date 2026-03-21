@@ -37,23 +37,28 @@ const BENEFITS = [
 const STEPS = [
   {
     number: "01",
-    title: "Sign In",
-    description: "Connect with your email, Google account, or crypto wallet — no prior experience needed.",
+    title: "Inicia Sesión",
+    description: "Conéctate con tu correo, cuenta de Google o billetera — sin experiencia previa necesaria.",
   },
   {
     number: "02",
-    title: "Complete Your Profile",
-    description: "Verify your investor profile in under 2 minutes to unlock full access to live auctions.",
+    title: "Completa tu Perfil",
+    description: "Verifica tu perfil de inversor en menos de 2 minutos para desbloquear acceso completo a las subastas.",
   },
   {
     number: "03",
-    title: "Fund Your Account",
-    description: "Deposit USDC or ECOP to your wallet. Your balance is always visible and fully under your control.",
+    title: "Fondea tu Cuenta",
+    description: "Deposita USDC o ECOP en tu billetera. Tu saldo siempre es visible y está totalmente bajo tu control.",
   },
   {
     number: "04",
-    title: "Bid on Properties",
-    description: "Browse active auctions, place bids in real time, and track every move on-chain — fully transparent.",
+    title: "Paga tu Entrada",
+    description: "Cada subasta requiere una tarifa de participación en USDC. Págala una sola vez para desbloquear tu derecho a pujar.",
+  },
+  {
+    number: "05",
+    title: "Puja por Propiedades",
+    description: "Explora subastas activas, realiza ofertas en tiempo real y sigue cada movimiento — completamente transparente.",
   },
 ];
 
@@ -80,7 +85,7 @@ export default function HomePage() {
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(45,212,212,0.12), transparent), radial-gradient(ellipse 60% 40% at 80% 60%, rgba(14,165,233,0.08), transparent)",
+              "radial-gradient(ellipse 90% 55% at 50% -15%, rgba(45,212,212,0.10), transparent), radial-gradient(ellipse 50% 40% at 85% 55%, rgba(14,165,233,0.07), transparent)",
             pointerEvents: "none",
           }}
         />
@@ -89,13 +94,13 @@ export default function HomePage() {
         <div
           className="hero-grid"
           style={{
-            maxWidth: 1100,
+            maxWidth: 1280,
             margin: "0 auto",
-            padding: "80px 24px 60px",
+            padding: "96px 40px 72px",
             position: "relative",
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 56,
+            gridTemplateColumns: "5fr 6fr",
+            gap: 72,
             alignItems: "center",
           }}
         >
@@ -107,23 +112,24 @@ export default function HomePage() {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 8,
-                padding: "6px 14px",
+                padding: "7px 16px",
                 borderRadius: 999,
-                background: "rgba(45,212,212,0.1)",
-                border: "1px solid rgba(45,212,212,0.2)",
-                marginBottom: 28,
+                background: "rgba(45,212,212,0.08)",
+                border: "1px solid rgba(45,212,212,0.22)",
+                marginBottom: 32,
               }}
             >
               <div
                 style={{
-                  width: 6,
-                  height: 6,
+                  width: 7,
+                  height: 7,
                   borderRadius: "50%",
                   background: "#22c55e",
                   animation: "pulse 2s infinite",
+                  flexShrink: 0,
                 }}
               />
-              <span style={{ fontSize: 12, color: "#67e8f9", fontWeight: 600 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#2DD4D4", letterSpacing: 1.2 }}>
                 Subastas en Vivo — Abiertas Ahora
               </span>
             </div>
@@ -131,11 +137,11 @@ export default function HomePage() {
             {/* Headline */}
             <h1
               style={{
-                fontSize: "clamp(2.2rem, 5vw, 3.6rem)",
+                fontSize: "clamp(2.4rem, 4.5vw, 4rem)",
                 fontWeight: 800,
-                lineHeight: 1.1,
-                letterSpacing: -1,
-                marginBottom: 20,
+                lineHeight: 1.08,
+                letterSpacing: -1.5,
+                marginBottom: 24,
               }}
             >
               Invierte en Bienes Raíces
@@ -147,10 +153,10 @@ export default function HomePage() {
             <p
               style={{
                 fontSize: 18,
-                color: "rgba(255,255,255,0.6)",
-                maxWidth: 480,
-                lineHeight: 1.65,
-                marginBottom: 40,
+                color: "rgba(255,255,255,0.55)",
+                lineHeight: 1.7,
+                marginBottom: 44,
+                maxWidth: 440,
               }}
             >
               Subastas inmobiliarias abiertas, transparentes y en tiempo real. Participa
@@ -162,13 +168,13 @@ export default function HomePage() {
               onClick={handleAccess}
               disabled={!ready}
               style={{
-                padding: "16px 40px",
+                padding: "18px 48px",
                 borderRadius: 14,
                 background: ready ? "#2DD4D4" : "rgba(45,212,212,0.35)",
                 color: "#0f172a",
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: 800,
-                letterSpacing: 1.5,
+                letterSpacing: 2,
                 border: "none",
                 cursor: ready ? "pointer" : "not-allowed",
                 display: "inline-flex",
@@ -195,28 +201,28 @@ export default function HomePage() {
           {/* Right — Kick stream */}
           <div
             style={{
-              borderRadius: 20,
+              borderRadius: 22,
               overflow: "hidden",
-              border: "1px solid rgba(45,212,212,0.18)",
-              boxShadow: "0 0 80px rgba(45,212,212,0.06)",
+              border: "1px solid rgba(45,212,212,0.15)",
+              boxShadow: "0 0 100px rgba(45,212,212,0.05), 0 24px 64px rgba(0,0,0,0.5)",
               aspectRatio: "16/9",
-              background: "#0a0a0a",
+              background: "#050a14",
               position: "relative",
             }}
           >
             <div
               style={{
                 position: "absolute",
-                top: 12,
-                left: 12,
+                top: 14,
+                left: 14,
                 zIndex: 10,
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 6,
-                padding: "4px 10px",
+                padding: "5px 12px",
                 borderRadius: 999,
-                background: "rgba(0,0,0,0.72)",
-                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(0,0,0,0.75)",
+                border: "1px solid rgba(255,255,255,0.10)",
                 backdropFilter: "blur(8px)",
               }}
             >
@@ -237,9 +243,8 @@ export default function HomePage() {
               src={`https://player.kick.com/${KICK_CHANNEL}`}
               width="100%"
               height="100%"
-              style={{ border: "none", display: "block", minHeight: 260 }}
+              style={{ border: "none", display: "block", minHeight: 280 }}
               allowFullScreen
-              scrolling="no"
             />
           </div>
         </div>
@@ -247,103 +252,147 @@ export default function HomePage() {
         {/* ── How it works ────────────────────────────── */}
         <div
           style={{
-            maxWidth: 1100,
+            maxWidth: 1280,
             margin: "0 auto",
-            padding: "0 24px 80px",
+            padding: "0 40px 96px",
             position: "relative",
           }}
         >
-          <div style={{ textAlign: "center", marginBottom: 48 }}>
-            <p style={{ fontSize: 12, color: "#67e8f9", fontWeight: 600, letterSpacing: 2, marginBottom: 12 }}>
-              HOW IT WORKS
-            </p>
-            <h2 style={{ fontSize: "clamp(1.6rem, 3vw, 2.2rem)", fontWeight: 800, letterSpacing: -0.5 }}>
-              From sign-up to winning bid in minutes
-            </h2>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-            {STEPS.map((step) => (
-              <div key={step.number} style={{ padding: "28px 24px", borderRadius: 18, background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: "#2DD4D4", letterSpacing: 2, marginBottom: 14 }}>{step.number}</div>
-                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, lineHeight: 1.3 }}>{step.title}</h3>
-                <p style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.6, margin: 0 }}>{step.description}</p>
-              </div>
-            ))}
-          </div>
-          <div style={{ textAlign: "center", marginTop: 40 }}>
-            <button onClick={handleAccess} disabled={!ready} style={{ padding: "14px 36px", borderRadius: 14, background: ready ? "#2DD4D4" : "rgba(45,212,212,0.35)", color: "#0f172a", fontSize: 15, fontWeight: 800, letterSpacing: 1, border: "none", cursor: ready ? "pointer" : "not-allowed" }}>
-              {authenticated ? "Go to Auctions →" : "Get Started →"}
+          {/* Section header */}
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 48, flexWrap: "wrap", gap: 16 }}>
+            <div>
+              <p style={{ fontSize: 11, color: "#67e8f9", fontWeight: 700, letterSpacing: 2.5, marginBottom: 10, textTransform: "uppercase" }}>
+                Cómo Funciona
+              </p>
+              <h2 style={{ fontSize: "clamp(1.7rem, 3vw, 2.4rem)", fontWeight: 800, letterSpacing: -0.5, lineHeight: 1.15 }}>
+                Del registro a tu primera oferta
+                <br />
+                <span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 600 }}>en minutos</span>
+              </h2>
+            </div>
+            <button
+              onClick={handleAccess}
+              disabled={!ready}
+              style={{
+                padding: "13px 32px",
+                borderRadius: 12,
+                background: ready ? "#2DD4D4" : "rgba(45,212,212,0.35)",
+                color: "#0f172a",
+                fontSize: 14,
+                fontWeight: 800,
+                letterSpacing: 1,
+                border: "none",
+                cursor: ready ? "pointer" : "not-allowed",
+                flexShrink: 0,
+              }}
+            >
+              {authenticated ? "Ir a Subastas →" : "Comenzar →"}
             </button>
           </div>
-        </div>
 
-        {/* ── Benefits ─────────────────────────────────── */}
-        <div
-          style={{
-            maxWidth: 1100,
-            margin: "0 auto",
-            padding: "0 24px 80px",
-            position: "relative",
-          }}
-        >
-          <div
-            style={{
-              textAlign: "center",
-              marginBottom: 48,
-            }}
-          >
-            <p style={{ fontSize: 12, color: "#67e8f9", fontWeight: 600, letterSpacing: 2, marginBottom: 12 }}>
-              POR QUÉ ZBRICKS
-            </p>
-            <h2 style={{ fontSize: "clamp(1.6rem, 3vw, 2.2rem)", fontWeight: 800, letterSpacing: -0.5 }}>
-              Una forma más inteligente de comprar bienes raíces
-            </h2>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-              gap: 16,
-            }}
-          >
-            {BENEFITS.map((b) => (
+          {/* Steps — horizontal row */}
+          <div className="steps-grid" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16 }}>
+            {STEPS.map((step, i) => (
               <div
-                key={b.title}
+                key={step.number}
                 style={{
-                  padding: "28px 24px",
-                  borderRadius: 18,
-                  background: "rgba(255,255,255,0.025)",
+                  padding: "32px 24px",
+                  borderRadius: 20,
+                  background: "rgba(255,255,255,0.022)",
                   border: "1px solid rgba(255,255,255,0.07)",
-                  transition: "border-color 0.2s",
+                  position: "relative",
+                  overflow: "hidden",
                 }}
               >
-                <div style={{ fontSize: 30, marginBottom: 16 }}>{b.icon}</div>
-                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, lineHeight: 1.3 }}>
-                  {b.title}
+                {/* Connector line (not on last) */}
+                {i < STEPS.length - 1 && (
+                  <div style={{
+                    position: "absolute",
+                    top: 44,
+                    right: -8,
+                    width: 16,
+                    height: 1,
+                    background: "rgba(45,212,212,0.18)",
+                    zIndex: 1,
+                  }} />
+                )}
+                <div style={{ fontSize: 10, fontWeight: 800, color: "#2DD4D4", letterSpacing: 3, marginBottom: 20 }}>
+                  {step.number}
+                </div>
+                <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12, lineHeight: 1.3 }}>
+                  {step.title}
                 </h3>
-                <p style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
-                  {b.description}
+                <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", lineHeight: 1.65, margin: 0 }}>
+                  {step.description}
                 </p>
               </div>
             ))}
           </div>
         </div>
 
+        {/* ── Benefits ─────────────────────────────────── */}
+        <div
+          style={{
+            maxWidth: 1280,
+            margin: "0 auto",
+            padding: "0 40px 96px",
+            position: "relative",
+          }}
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: 64, alignItems: "start" }}>
+            {/* Left — sticky label */}
+            <div style={{ paddingTop: 8 }}>
+              <p style={{ fontSize: 11, color: "#67e8f9", fontWeight: 700, letterSpacing: 2.5, marginBottom: 10, textTransform: "uppercase" }}>
+                Por Qué ZBricks
+              </p>
+              <h2 style={{ fontSize: "clamp(1.7rem, 2.5vw, 2.4rem)", fontWeight: 800, letterSpacing: -0.5, lineHeight: 1.2 }}>
+                Una forma más inteligente de comprar bienes raíces
+              </h2>
+              <p style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", lineHeight: 1.65, marginTop: 16 }}>
+                Construimos el mercado inmobiliario que los inversores merecen — abierto, justo y sin intermediarios.
+              </p>
+            </div>
+
+            {/* Right — 2×2 benefit grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              {BENEFITS.map((b) => (
+                <div
+                  key={b.title}
+                  style={{
+                    padding: "32px 28px",
+                    borderRadius: 20,
+                    background: "rgba(255,255,255,0.022)",
+                    border: "1px solid rgba(255,255,255,0.07)",
+                    transition: "border-color 0.2s",
+                  }}
+                >
+                  <div style={{ fontSize: 28, marginBottom: 18 }}>{b.icon}</div>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, lineHeight: 1.3 }}>
+                    {b.title}
+                  </h3>
+                  <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", lineHeight: 1.65, margin: 0 }}>
+                    {b.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* ── Partners / Powered by ─────────────────────── */}
         <div
           style={{
-            maxWidth: 1100,
+            maxWidth: 1280,
             margin: "0 auto",
-            padding: "32px 24px 80px",
-            borderTop: "1px solid rgba(255,255,255,0.07)",
+            padding: "28px 40px 80px",
+            borderTop: "1px solid rgba(255,255,255,0.06)",
             display: "flex",
             alignItems: "center",
-            gap: 28,
+            gap: 32,
             flexWrap: "wrap",
           }}
         >
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", fontWeight: 500 }}>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", fontWeight: 600, letterSpacing: 1.5, textTransform: "uppercase" }}>
             Impulsado por
           </span>
 
@@ -356,7 +405,7 @@ export default function HomePage() {
               height={22}
               style={{ borderRadius: 6 }}
             />
-            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.55)" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>
               Base
             </span>
           </div>
@@ -370,7 +419,7 @@ export default function HomePage() {
               height={22}
               style={{ borderRadius: "50%" }}
             />
-            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.55)" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>
               USDC
             </span>
           </div>
@@ -384,7 +433,7 @@ export default function HomePage() {
               height={22}
               style={{ borderRadius: "50%" }}
             />
-            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.55)" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>
               ECOP
             </span>
           </div>
@@ -397,8 +446,18 @@ export default function HomePage() {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
         }
-        @media (max-width: 768px) {
+        @media (max-width: 900px) {
           .hero-grid {
+            grid-template-columns: 1fr !important;
+            padding: 60px 24px 48px !important;
+            gap: 40px !important;
+          }
+          .steps-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+          }
+        }
+        @media (max-width: 600px) {
+          .steps-grid {
             grid-template-columns: 1fr !important;
           }
         }

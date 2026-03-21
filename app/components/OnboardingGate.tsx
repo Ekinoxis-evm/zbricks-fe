@@ -7,6 +7,60 @@ import { useUserProfile } from "@/lib/hooks/useUserProfile";
 
 const PROTECTED_ROUTES = ["/account", "/biddings", "/admin"];
 
+function LoadingScreen() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#030712",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 20,
+      }}
+    >
+      <div
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 14,
+          background: "linear-gradient(135deg, #2DD4D4 0%, #0ea5e9 100%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: 900,
+          fontSize: 22,
+          color: "#0f172a",
+        }}
+      >
+        Z
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "#2DD4D4",
+              opacity: 0.3,
+              animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite`,
+            }}
+          />
+        ))}
+      </div>
+      <style jsx>{`
+        @keyframes dotPulse {
+          0%, 100% { opacity: 0.2; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export default function OnboardingGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -29,18 +83,18 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
     }
 
     if (!authenticated && isProtected) {
-      router.push("/auctions");
+      router.push("/");
     }
   }, [ready, authenticated, profileLoading, isOnboarded, pathname, isProtected, isOnboardingPage, router]);
 
-  // Wait for Privy + profile to resolve before rendering anything
-  if (!ready || (authenticated && profileLoading)) return null;
+  // Show branded loading screen instead of blank flash
+  if (!ready || (authenticated && profileLoading)) return <LoadingScreen />;
 
-  if (isProtected && (!authenticated || !isOnboarded)) return null;
+  if (isProtected && (!authenticated || !isOnboarded)) return <LoadingScreen />;
 
   if (isOnboardingPage && authenticated && isOnboarded) {
     router.push("/auctions");
-    return null;
+    return <LoadingScreen />;
   }
 
   return <>{children}</>;

@@ -130,14 +130,14 @@ export default function PropertiesPage() {
               disabled={loading}
               className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10 disabled:opacity-50"
             >
-              {loading ? "Loading..." : "Refresh"}
+              {loading ? "Cargando..." : "Actualizar"}
             </button>
           </div>
         </div>
 
         <div className="mb-6 rounded-xl border border-white/10 bg-white/[0.02] p-4 text-sm">
           <div className="flex justify-between items-center">
-            <span className="text-white/50">HouseNFT Contract</span>
+            <span className="text-white/50">Contrato HouseNFT</span>
             <a
               href={`${CHAIN_META.explorer}/address/${CONTRACTS.HouseNFT}`}
               target="_blank"
@@ -151,7 +151,7 @@ export default function PropertiesPage() {
             </a>
           </div>
           <div className="flex justify-between mt-2">
-            <span className="text-white/50">Tokens Minted</span>
+            <span className="text-white/50">Tokens Acuñados</span>
             <span>{tokens.length}</span>
           </div>
         </div>
@@ -164,13 +164,13 @@ export default function PropertiesPage() {
 
         {loading && (
           <div className="text-center py-16 text-white/50">
-            Loading tokens from chain...
+            Cargando tokens desde la red...
           </div>
         )}
 
         {!loading && tokens.length === 0 && !error && (
           <div className="text-center py-16 text-white/40">
-            No tokens minted yet on {CHAIN_META.chainName}.
+            No hay tokens acuñados aún en {CHAIN_META.chainName}.
           </div>
         )}
 

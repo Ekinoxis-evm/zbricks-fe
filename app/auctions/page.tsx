@@ -326,7 +326,7 @@ export default function AuctionsPage() {
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent mb-4" />
-          <div className="text-lg opacity-80">Loading auctions from {CHAIN_META.chainName}...</div>
+          <div className="text-lg opacity-80">Cargando subastas desde {CHAIN_META.chainName}...</div>
         </div>
       </main>
     );
@@ -342,7 +342,7 @@ export default function AuctionsPage() {
         <div className="max-w-[1200px] mx-auto">
           <div className="flex gap-3 flex-wrap items-center mb-5">
             <div className="text-gray-400 text-sm">
-              {auctions.length} auctions on-chain
+              {auctions.length} subastas disponibles
             </div>
 
             <div className="flex-1" />
@@ -351,15 +351,15 @@ export default function AuctionsPage() {
               onClick={() => fetchAuctions()}
               className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
             >
-              Refresh
+              Actualizar
             </button>
 
             <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-white/10 bg-white/[0.03] min-w-[280px]">
-              <span className="text-gray-400 text-xs">Search</span>
+              <span className="text-gray-400 text-xs">Buscar</span>
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Address, title..."
+                placeholder="Dirección, título..."
                 className="flex-1 bg-transparent border-none outline-none text-white text-sm"
               />
             </div>
@@ -367,31 +367,31 @@ export default function AuctionsPage() {
 
           <div className="grid grid-cols-[280px_1fr] gap-4 marketLayout">
             <aside className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 h-fit">
-              <div className="font-black mb-2.5">Filters</div>
-              <div className="text-xs text-gray-400 mb-2">Status</div>
+              <div className="font-black mb-2.5">Filtros</div>
+              <div className="text-xs text-gray-400 mb-2">Estado</div>
               <div className="flex gap-2 flex-wrap">
                 <Chip active={statusFilter === "Todas"} onClick={() => setStatusFilter("Todas")}>
-                  All
+                  Todas
                 </Chip>
                 <Chip active={statusFilter === "Activa"} onClick={() => setStatusFilter("Activa")}>
-                  Active
+                  Activas
                 </Chip>
                 <Chip active={statusFilter === "Finalizada"} onClick={() => setStatusFilter("Finalizada")}>
-                  Ended
+                  Finalizadas
                 </Chip>
               </div>
 
               <div className="mt-3.5 pt-3.5 border-t border-white/[0.08]">
-                <div className="text-xs text-gray-400 mb-2">Summary</div>
+                <div className="text-xs text-gray-400 mb-2">Resumen</div>
                 <div className="grid gap-2">
                   <MiniStat label="Total" value={String(auctions.length)} />
-                  <MiniStat label="Active" value={String(activeCount)} />
-                  <MiniStat label="Ended" value={String(finalizedCount)} />
+                  <MiniStat label="Activas" value={String(activeCount)} />
+                  <MiniStat label="Finalizadas" value={String(finalizedCount)} />
                 </div>
               </div>
 
               <div className="mt-3.5 pt-3.5 border-t border-white/[0.08]">
-                <div className="text-xs text-gray-400 mb-2">Contracts</div>
+                <div className="text-xs text-gray-400 mb-2">Contratos</div>
                 <div className="space-y-2 text-xs">
                   <div>
                     <div className="text-white/50 mb-1">Factory</div>
@@ -439,7 +439,7 @@ export default function AuctionsPage() {
               </div>
 
               <div className="mt-3.5 p-3 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] text-gray-200 text-[13px] leading-tight">
-                <b className="text-cyan-400">Tip:</b> Click any property to place a bid on-chain with USDC.
+                <b className="text-cyan-400">Consejo:</b> Haz clic en cualquier propiedad para realizar una oferta con USDC.
               </div>
             </aside>
 
@@ -472,7 +472,7 @@ export default function AuctionsPage() {
 
               {filtered.length === 0 && (
                 <div className="col-span-full p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-gray-400 text-center">
-                  No auctions found with the current filters.
+                  No se encontraron subastas con los filtros actuales.
                 </div>
               )}
             </div>
