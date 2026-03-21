@@ -73,9 +73,15 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
 
   const isProtected = PROTECTED_ROUTES.some((r) => pathname.startsWith(r));
   const isOnboardingPage = pathname === "/onboarding";
+  const isLandingPage = pathname === "/";
 
   useEffect(() => {
     if (!ready || profileLoading) return;
+
+    if (authenticated && isOnboarded && isLandingPage) {
+      router.push("/auctions");
+      return;
+    }
 
     if (authenticated && !isOnboardingPage && !isOnboarded) {
       router.push("/onboarding");
@@ -85,7 +91,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
     if (!authenticated && isProtected) {
       router.push("/");
     }
-  }, [ready, authenticated, profileLoading, isOnboarded, pathname, isProtected, isOnboardingPage, router]);
+  }, [ready, authenticated, profileLoading, isOnboarded, pathname, isProtected, isOnboardingPage, isLandingPage, router]);
 
   // Show branded loading screen instead of blank flash
   if (!ready || (authenticated && profileLoading)) return <LoadingScreen />;
